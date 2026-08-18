@@ -1,0 +1,169 @@
+"""English language rules.
+
+The interesting assertions here are the asymmetries with German: the address
+form check is weaker and declares itself so, and `01/02/2026` is day-first.
+"""
+
+import pytest
+
+from guardrails.locale import get_rules, supported_locales
+from guardrails.types import AddressForm, EntityKind, Locale
+
+RULES = get_rules(Locale.EN_GB)
+ALL_KINDS = frozenset(EntityKind)
+
+
+def kinds_of(text, kinds=ALL_KINDS):
+    return [(e.kind, e.raw, e.normalized) for e in RULES.extract_entities(text, kinds)]
+
+
+class TestRegistry:
+    def test_both_locales_are_registered(self):
+        assert set(supported_locales()) == {Locale.DE_DE, Locale.EN_GB}
+
+    def test_each_implementation_reports_its_own_locale(self):
+        for locale in supported_locales():
+            assert get_rules(locale).locale is locale
+
+
+class TestSegmentation:
+    def test_plain_sentences(self):
+        text = "Your contract continues. Cancellation is possible. Thanks!"
+        assert len(RULES.segment_sentences(text)) == 3
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "This applies to new customers, e.g. those joining in March.",
+            "Please contact Dr. Weber about the account.",
+            "The price is £19.99 per month including VAT.",
+        ],
+    )
+    def test_abbreviations_and_decimals_do_not_split(self, text):
+        assert len(RULES.segment_sentences(text)) == 1
+
+    def test_spans_index_the_original_text(self):
+        text = "  First one. Second one.  "
+        for sentence in RULES.segment_sentences(text):
+            lo, hi = sentence.span
+            assert text[lo:hi] == sentence.text
+
+
+class TestAddressForm:
+    def test_the_check_declares_itself_weaker_than_german(self):
+        """English has no grammatical T-V distinction; this is data, not prose,
+        so a guard can weigh the finding rather than assume parity."""
+        assert RULES.supports_grammatical_address_form is False
+        assert get_rules(Locale.DE_DE).supports_grammatical_address_form is True
+
+    def test_contractions_are_reported_as_contractions(self):
+        hits = RULES.check_address_form("We can't do that, but you're covered.", AddressForm.FORMAL)
+        assert {h.marker for h in hits} == {"contraction"}
+
+    def test_casual_greeting(self):
+        hits = RULES.check_address_form("Hi there. How can I help?", AddressForm.FORMAL)
+        assert [h.marker for h in hits] == ["casual_greeting"]
+
+    def test_a_formal_reply_produces_nothing(self):
+        text = "Thank you for your message. I will check your account and confirm shortly."
+        assert RULES.check_address_form(text, AddressForm.FORMAL) == ()
+
+
+class TestEntities:
+    @pytest.mark.parametrize(
+        "text,normalized",
+        [
+            ("It costs £19.99.", "19.99 GBP"),
+            ("The price is 19.99 GBP.", "19.99 GBP"),
+            ("A one-off £29 connection fee.", "29.00 GBP"),
+            ("In total £1,234.50.", "1234.50 GBP"),
+        ],
+    )
+    def test_prices(self, text, normalized):
+        prices = [e for e in RULES.extract_entities(text, ALL_KINDS) if e.kind is EntityKind.PRICE]
+        assert [p.normalized for p in prices] == [normalized]
+
+    def test_slash_dates_are_day_first(self):
+        """en-GB: 01/02/2026 is 1 February. The same string is 2 January under
+        en-US, which is exactly why this is locale knowledge."""
+        dates = [e for e in RULES.extract_entities("Valid from 01/02/2026.", ALL_KINDS)
+                 if e.kind is EntityKind.DATE]
+        assert [d.normalized for d in dates] == ["2026-02-01"]
+
+    @pytest.mark.parametrize(
+        "text,iso",
+        [
+            ("Valid from 1 February 2026.", "2026-02-01"),
+            ("Valid from 1st February 2026.", "2026-02-01"),
+            ("Valid from 2026-02-01.", "2026-02-01"),
+        ],
+    )
+    def test_date_spellings_normalise_alike(self, text, iso):
+        dates = [e for e in RULES.extract_entities(text, ALL_KINDS) if e.kind is EntityKind.DATE]
+        assert [d.normalized for d in dates] == [iso]
+
+    def test_an_impossible_date_is_not_extracted(self):
+        assert not [e for e in RULES.extract_entities("Ends on 31/02/2026.", ALL_KINDS)
+                    if e.kind is EntityKind.DATE]
+
+    @pytest.mark.parametrize(
+        "text,iso",
+        [
+            ("The term is 24 months.", "P24M"),
+            ("A 24-month contract is available.", "P24M"),
+            ("Within 14 days.", "P14D"),
+            ("Valid for 2 years.", "P2Y"),
+        ],
+    )
+    def test_durations(self, text, iso):
+        durations = [e for e in RULES.extract_entities(text, ALL_KINDS)
+                     if e.kind is EntityKind.DURATION]
+        assert [d.normalized for d in durations] == [iso]
+
+    def test_comma_thousands_separator(self):
+        assert kinds_of("You get 1,000 minutes.") == [(EntityKind.NUMBER, "1,000", "1000")]
+
+    def test_spans_index_the_original_text(self):
+        text = "From 01/02/2026 the tariff costs £19.99 for 24 months."
+        for entity in RULES.extract_entities(text, ALL_KINDS):
+            lo, hi = entity.span
+            assert text[lo:hi] == entity.raw
+
+    def test_entities_never_overlap(self):
+        text = "From 01/02/2026 the tariff costs £19.99 for 24 months, i.e. 1,000 minutes."
+        spans = [e.span for e in RULES.extract_entities(text, ALL_KINDS)]
+        for (a_lo, a_hi), (b_lo, b_hi) in zip(spans, spans[1:]):
+            assert a_hi <= b_lo
+
+
+class TestCrossLocale:
+    def test_the_same_quantity_normalises_to_the_same_value(self):
+        """1234.50 in either notation is the same number -- which is the whole
+        point of normalising before the grounding guard compares anything."""
+        de = get_rules(Locale.DE_DE).extract_entities("1.234,50 Minuten", ALL_KINDS)
+        en = get_rules(Locale.EN_GB).extract_entities("1,234.50 minutes", ALL_KINDS)
+        assert de[0].normalized == en[0].normalized == "1234.5"
+
+    def test_trailing_zeros_do_not_defeat_a_number_comparison(self):
+        """A document writing `1.234,50` and a reply writing `1.234,5` state the
+        same fact. Numbers drop trailing zeros so the grounding guard does not
+        call that a mismatch."""
+        rules = get_rules(Locale.DE_DE)
+        long = rules.extract_entities("1.234,50 Minuten", ALL_KINDS)[0]
+        short = rules.extract_entities("1.234,5 Minuten", ALL_KINDS)[0]
+        assert long.normalized == short.normalized
+
+    def test_prices_keep_two_decimals_instead(self):
+        """Currency has fixed minor units, so prices quantise rather than strip:
+        `29 EUR` and `29,00 EUR` must compare equal, and they do because both
+        sides go through the same rule. The two kinds normalise differently on
+        purpose."""
+        rules = get_rules(Locale.DE_DE)
+        bare = rules.extract_entities("29 €", ALL_KINDS)[0]
+        padded = rules.extract_entities("29,00 €", ALL_KINDS)[0]
+        assert bare.normalized == padded.normalized == "29.00 EUR"
+
+    def test_currency_is_part_of_the_normal_form(self):
+        de = get_rules(Locale.DE_DE).extract_entities("19,99 €", ALL_KINDS)
+        en = get_rules(Locale.EN_GB).extract_entities("£19.99", ALL_KINDS)
+        assert de[0].normalized != en[0].normalized

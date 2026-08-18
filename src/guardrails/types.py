@@ -29,7 +29,10 @@ from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_valid
 
 __all__ = [
     "Action",
+    "AddressForm",
+    "EntityKind",
     "Evidence",
+    "Locale",
     "Mode",
     "Outcome",
     "PipelineResult",
@@ -38,6 +41,47 @@ __all__ = [
     "Verdict",
     "aggregate_severity",
 ]
+
+
+class Locale(StrEnum):
+    """Language and region tag, selecting the language-rule implementation.
+
+    This names a *language*, not a country. Country-specific formats — IBAN
+    prefixes, phone numbering plans, postcodes — vary independently: a
+    German-language client in Switzerland keeps every rule in ``de`` and none of
+    the German account formats. Those live with the guard that needs them,
+    keyed on region.
+    """
+
+    DE_DE = "de-DE"
+    EN_GB = "en-GB"
+
+
+class AddressForm(StrEnum):
+    """How the assistant addresses the user.
+
+    The realisation is language-specific, and that asymmetry is the point.
+    German grammaticalises the T-V distinction (``Sie`` / ``du``), so the rule
+    is deterministically checkable. English has no equivalent and degrades to
+    weaker register cues. Brand-voice rules depend on the language, which is why
+    locale is a dimension of the profile rather than an afterthought.
+    """
+
+    FORMAL = "formal"
+    INFORMAL = "informal"
+
+
+class EntityKind(StrEnum):
+    """Classes of fact extracted from a reply and matched against evidence.
+
+    An enum rather than free strings so that a profile writing ``prices``
+    instead of ``price`` fails to load instead of silently checking nothing.
+    """
+
+    NUMBER = "number"
+    PRICE = "price"
+    DATE = "date"
+    DURATION = "duration"
 
 
 class Stage(StrEnum):

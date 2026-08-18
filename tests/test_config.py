@@ -28,11 +28,22 @@ def raw_telco() -> dict:
 
 
 class TestShippedProfilesLoad:
-    @pytest.mark.parametrize("filename", ["telco_de.yaml", "gesundheit_de.yaml"])
+    @pytest.mark.parametrize(
+        "filename", ["telco_de.yaml", "telco_en.yaml", "gesundheit_de.yaml"]
+    )
     def test_profile_loads(self, filename):
         profile = load_profile(PROFILES / filename)
-        assert profile.locale is Locale.DE_DE
         assert profile.guards.persona.persona.address_form is AddressForm.FORMAL
+
+    def test_the_same_client_can_run_two_locales(self):
+        """telco_en differs from telco_de in locale and in how strongly the
+        address-form finding is weighted -- not in any guard code."""
+        de = load_profile(PROFILES / "telco_de.yaml")
+        en = load_profile(PROFILES / "telco_en.yaml")
+        assert (de.locale, en.locale) == (Locale.DE_DE, Locale.EN_GB)
+        assert de.guards.persona.persona.address_form is en.guards.persona.persona.address_form
+        assert "address_form" not in de.guards.persona.severity_overrides
+        assert en.guards.persona.severity_overrides["address_form"] is Severity.LOW
 
     def test_second_client_differs_only_in_configuration(self):
         """The multi-tenancy claim, asserted rather than described."""

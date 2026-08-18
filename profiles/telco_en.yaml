@@ -1,0 +1,87 @@
+# The same telecom client, English channel. Identical guard code, identical
+# schema -- what changes is the language rules the locale selects.
+#
+# The interesting difference is the persona check. `address_form: formal` means
+# something weaker here than in telco_de.yaml: German marks the distinction
+# grammatically, English does not, so the check degrades to register heuristics
+# (contractions, casual greetings). The locale implementation reports that
+# through `supports_grammatical_address_form`, so the finding can be weighed
+# rather than assumed equivalent -- which is why address_form is dialled down to
+# `low` here and left at its default in the German profile.
+
+name: telco_en
+locale: en-GB
+
+models:
+  chat: claude-opus-5
+  judge: claude-opus-5
+  judge_effort: low
+  judge_min_budget_ms: 400
+
+routing:
+  none: continue
+  low: continue          # logged, not acted on: a single over-long sentence
+  medium: rewrite        # repair the offending span, then re-verify
+  high: handover         # a person answers questions about price and policy
+  critical: safe_fallback
+
+guards:
+  persona:
+    severity_overrides:
+      address_form: low
+    persona:
+      address_form: formal        # en-GB -> register cues only; see the note above
+      emoji_allowed: false
+      forbidden_phrases:
+        - "no worries"
+        - "no problem at all"
+        - "mate"
+        - "sorted"
+      max_sentence_words: 25
+      tts_safe: true
+      tone: ["formal", "empathetic", "precise"]
+
+  grounding:
+    check_entities: ["number", "price", "date", "duration"]
+    allowed_commitments:
+      - schedule_callback
+      - send_confirmation_email
+    escalate_below_confidence: 0.8
+    severity_overrides:
+      unsupported_commitment: critical
+      # The address-form check has no grammatical anchor in English, so a hit is
+      # a weaker signal than the same finding in de-DE. Same guard, same config
+      # key, calibrated to what the language can actually support.
+
+  injection:
+    scan_retrieved_documents: true
+    cross_turn_window: 5
+
+  pii:
+    redact_inbound: true
+    entities: ["iban", "phone", "customer_id", "birthdate", "address"]
+    on_timeout: critical    # overrides the mode default, including in voice:
+    on_error: critical      # a PII check that did not run is not a pass
+
+modes:
+  voice:
+    budget_ms: 150
+    max_tier: 0             # deterministic checks only
+    on_timeout: none        # fail open: stalling a live call costs more than
+    on_error: none          # the residual risk of one unchecked turn
+    routing:
+      medium: handover      # no mid-call rewrite; pass the caller to a person
+
+  chat:
+    budget_ms: 1500
+    max_tier: 1             # tier-1 judges permitted
+    on_timeout: high        # fail closed
+    on_error: high
+
+fallback_message: >-
+  I do not have confirmed information about that, and I would rather not give
+  you an answer I cannot stand behind. Let me pass you to our customer service
+  team.
+
+handover_message: >-
+  One moment please -- I am transferring you to a colleague in customer service.

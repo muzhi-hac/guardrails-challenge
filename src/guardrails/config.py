@@ -43,7 +43,7 @@ from pydantic import (
 )
 
 from guardrails import findings
-from guardrails.types import Action, Mode, Severity
+from guardrails.types import Action, AddressForm, EntityKind, Locale, Mode, Severity
 
 __all__ = [
     "AddressForm",
@@ -97,27 +97,6 @@ class ConfigModel(BaseModel):
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-class Locale(StrEnum):
-    """Language and region, which selects the locale rule implementation."""
-
-    DE_DE = "de-DE"
-    EN_GB = "en-GB"
-
-
-class AddressForm(StrEnum):
-    """How the assistant addresses the user.
-
-    The realisation is language-specific and that is the point: German has a
-    grammaticalised T-V distinction (``Sie`` / ``du``) that is deterministically
-    checkable, English has no equivalent and degrades to register cues. Brand
-    voice rules are language-dependent, so locale is a first-class dimension of
-    the profile rather than an afterthought.
-    """
-
-    FORMAL = "formal"
-    INFORMAL = "informal"
 
 
 class PersonaSpec(ConfigModel):
@@ -180,7 +159,12 @@ class PersonaGuardConfig(GuardConfig):
 class GroundingGuardConfig(GuardConfig):
     KNOWN_FINDINGS: ClassVar[frozenset[str]] = findings.GROUNDING_FINDINGS
 
-    check_entities: tuple[str, ...] = ("number", "price", "date", "duration")
+    check_entities: tuple[EntityKind, ...] = (
+        EntityKind.NUMBER,
+        EntityKind.PRICE,
+        EntityKind.DATE,
+        EntityKind.DURATION,
+    )
     """Entity classes extracted from the reply and matched against retrieved
     context. This deterministic check is the primary mechanism; the tier-1
     entailment judge only handles what it cannot decide."""

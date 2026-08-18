@@ -1,0 +1,266 @@
+"""German language rules.
+
+The address-form check is the reason locale is a first-class dimension of a
+profile. German marks the T-V distinction grammatically, so "this brand uses the
+formal register" is a closed set of pronouns and costs a regex.
+
+It also has a useful asymmetry. Every ambiguity in German register detection
+sits on the *formal* side: lowercase ``sie`` is "she"/"they", a sentence-initial
+``Sie`` is indistinguishable from it, and ``Ihr`` is both the polite possessive
+and "her"/"their". None of that matters for a client whose brand voice is
+formal, because detecting a *violation* only requires finding informal
+pronouns — and those are unambiguous. The high-precision path is the one the
+common case takes.
+"""
+
+from __future__ import annotations
+
+import re
+from datetime import date
+from decimal import Decimal, InvalidOperation
+from typing import ClassVar
+
+from guardrails.locale.base import (
+    AddressFormHit,
+    EntityMention,
+    Sentence,
+    count_words,
+    format_decimal,
+)
+from guardrails.types import AddressForm, EntityKind, Locale
+
+__all__ = ["GermanRules"]
+
+# --- sentence segmentation -------------------------------------------------
+
+_ABBREVIATIONS: frozenset[str] = frozenset(
+    {
+        "z.b.", "d.h.", "u.a.", "s.o.", "s.u.", "i.d.r.", "u.u.", "o.ä.", "ggf.",
+        "ggfs.", "bzw.", "bzgl.", "ca.", "inkl.", "exkl.", "zzgl.", "evtl.",
+        "vgl.", "max.", "min.", "nr.", "str.", "tel.", "usw.", "etc.", "abs.",
+        "art.", "mind.", "ggü.", "jhrl.", "mtl.",
+    }
+)
+
+_MONTHS: dict[str, int] = {
+    "januar": 1, "februar": 2, "märz": 3, "april": 4, "mai": 5, "juni": 6,
+    "juli": 7, "august": 8, "september": 9, "oktober": 10, "november": 11,
+    "dezember": 12,
+}
+_MONTH_ALT = "|".join(m.capitalize() for m in _MONTHS)
+
+# --- register markers ------------------------------------------------------
+
+_INFORMAL_WORDS = (
+    "deinem", "deinen", "deiner", "deines", "deine", "dein",
+    "eurem", "euren", "eurer", "eures", "eure", "euer",
+    "dich", "dir", "du", "euch",
+)
+_INFORMAL_RE = re.compile(
+    r"\b(?:" + "|".join(sorted(_INFORMAL_WORDS, key=len, reverse=True)) + r")\b",
+    re.IGNORECASE,
+)
+
+_FORMAL_UNAMBIGUOUS_RE = re.compile(r"\bIhnen\b")
+"""Capitalised ``Ihnen`` has no homograph: lowercase ``ihnen`` is "to them"."""
+
+_FORMAL_SIE_RE = re.compile(r"\bSie\b")
+"""Ambiguous at the start of a sentence, where ``Sie`` may be "she"/"they".
+Sentence-initial matches are discarded rather than guessed at."""
+
+# --- quantities ------------------------------------------------------------
+
+_AMOUNT = r"\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:,\d{1,2})?"
+_CURRENCY = r"€|EUR\b|Euro\b"
+
+_PRICE_RE = re.compile(
+    rf"(?:(?P<pre>{_CURRENCY})\s*(?P<a1>{_AMOUNT}))"
+    rf"|(?:(?P<a2>{_AMOUNT})\s*(?P<post>{_CURRENCY}))"
+)
+_DATE_NUMERIC_RE = re.compile(r"\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b")
+_DATE_LONG_RE = re.compile(rf"\b(\d{{1,2}})\.\s*({_MONTH_ALT})\s+(\d{{4}})\b")
+_DATE_MONTH_YEAR_RE = re.compile(rf"\b({_MONTH_ALT})\s+(\d{{4}})\b")
+_DURATION_RE = re.compile(
+    r"\b(\d+)\s*-?\s*(Monat(?:en|es|s|e)?|Jahr(?:en|es|e)?|Tag(?:en|es|e)?|Woche(?:n)?)\b",
+    re.IGNORECASE,
+)
+_NUMBER_RE = re.compile(rf"(?<![\w.,]){_AMOUNT}(?![\w])")
+
+_DURATION_UNITS = {"monat": "M", "jahr": "Y", "tag": "D", "woche": "W"}
+
+
+def _parse_amount(raw: str) -> Decimal | None:
+    """``1.234,56`` -> ``Decimal("1234.56")``. German uses ``.`` for thousands."""
+    try:
+        return Decimal(raw.replace(".", "").replace(",", "."))
+    except InvalidOperation:
+        return None
+
+
+class GermanRules:
+    """Language rules for German."""
+
+    locale: ClassVar[Locale] = Locale.DE_DE
+    supports_grammatical_address_form: ClassVar[bool] = True
+
+    # -- sentences ----------------------------------------------------------
+
+    def segment_sentences(self, text: str) -> tuple[Sentence, ...]:
+        boundaries = [i for i, ch in enumerate(text) if ch in ".!?" and self._is_boundary(text, i)]
+
+        sentences: list[Sentence] = []
+        start = 0
+        for end in [*boundaries, len(text) - 1]:
+            if end < start:
+                continue
+            sentences.append(self._make_sentence(text, start, end + 1))
+            start = end + 1
+        return tuple(s for s in sentences if s.text)
+
+    @staticmethod
+    def _make_sentence(text: str, start: int, end: int) -> Sentence:
+        chunk = text[start:end]
+        lead = len(chunk) - len(chunk.lstrip())
+        trail = len(chunk) - len(chunk.rstrip())
+        lo, hi = start + lead, end - trail
+        body = text[lo:hi]
+        return Sentence(text=body, span=(lo, hi), word_count=count_words(body))
+
+    def _is_boundary(self, text: str, i: int) -> bool:
+        after = text[i + 1 :]
+        if after and not after[0].isspace():
+            # Mid-token full stop: `z.B`, `1.000`, `i.d.R`.
+            return False
+        following = after.lstrip()
+        if following and not (following[0].isupper() or following[0] in "\"'«„("):
+            return False
+        if text[i] != ".":
+            return True
+        if self._is_abbreviation(text, i):
+            return False
+        return not self._is_date_ordinal(text, i, following)
+
+    @staticmethod
+    def _is_abbreviation(text: str, i: int) -> bool:
+        j = i
+        while j > 0 and (text[j - 1].isalpha() or text[j - 1] == "."):
+            j -= 1
+        return text[j : i + 1].lower() in _ABBREVIATIONS
+
+    @staticmethod
+    def _is_date_ordinal(text: str, i: int, following: str) -> bool:
+        """``am 1. Januar`` is one sentence; ``Das kostet 1. Danach ...`` is two.
+
+        Deliberately narrow: only a digit followed by a month name suppresses the
+        break. The general ordinal case (``der 1. Platz``) still splits — a rule
+        wide enough to catch it would swallow real sentence boundaries, which is
+        the more damaging error.
+        """
+        if i == 0 or not text[i - 1].isdigit():
+            return False
+        word = re.match(r"[^\W\d_]+", following)
+        return bool(word) and word.group().lower() in _MONTHS
+
+    # -- register -----------------------------------------------------------
+
+    def check_address_form(self, text: str, expected: AddressForm) -> tuple[AddressFormHit, ...]:
+        if expected is AddressForm.FORMAL:
+            return tuple(
+                AddressFormHit(
+                    form=AddressForm.INFORMAL,
+                    marker="informal_pronoun",
+                    token=m.group(),
+                    span=m.span(),
+                )
+                for m in _INFORMAL_RE.finditer(text)
+            )
+
+        starts = {s.span[0] for s in self.segment_sentences(text)}
+        hits = [
+            AddressFormHit(AddressForm.FORMAL, "formal_pronoun", m.group(), m.span())
+            for m in _FORMAL_UNAMBIGUOUS_RE.finditer(text)
+        ]
+        hits += [
+            AddressFormHit(AddressForm.FORMAL, "formal_pronoun", m.group(), m.span())
+            for m in _FORMAL_SIE_RE.finditer(text)
+            if m.start() not in starts
+        ]
+        return tuple(sorted(hits, key=lambda h: h.span))
+
+    # -- quantities ---------------------------------------------------------
+
+    def extract_entities(
+        self, text: str, kinds: frozenset[EntityKind]
+    ) -> tuple[EntityMention, ...]:
+        """Specific kinds claim their spans first; ``NUMBER`` takes what is left.
+
+        All kinds are extracted regardless of ``kinds`` and the result is
+        filtered at the end, so that the set of ``NUMBER`` mentions does not
+        change depending on whether ``PRICE`` happens to be enabled.
+        """
+        found: list[EntityMention] = []
+        taken: list[tuple[int, int]] = []
+
+        def claim(mention: EntityMention) -> None:
+            found.append(mention)
+            taken.append(mention.span)
+
+        for m in _PRICE_RE.finditer(text):
+            amount = _parse_amount(m.group("a1") or m.group("a2"))
+            if amount is not None:
+                claim(
+                    EntityMention(
+                        EntityKind.PRICE,
+                        m.group(),
+                        f"{amount.quantize(Decimal('0.01'))} EUR",
+                        m.span(),
+                    )
+                )
+
+        for m in _DATE_NUMERIC_RE.finditer(text):
+            day, month, year = (int(g) for g in m.groups())
+            if (iso := _iso_date(year, month, day)) and not _overlaps(m.span(), taken):
+                claim(EntityMention(EntityKind.DATE, m.group(), iso, m.span()))
+
+        for m in _DATE_LONG_RE.finditer(text):
+            day, month, year = int(m.group(1)), _MONTHS[m.group(2).lower()], int(m.group(3))
+            if (iso := _iso_date(year, month, day)) and not _overlaps(m.span(), taken):
+                claim(EntityMention(EntityKind.DATE, m.group(), iso, m.span()))
+
+        for m in _DATE_MONTH_YEAR_RE.finditer(text):
+            if not _overlaps(m.span(), taken):
+                month, year = _MONTHS[m.group(1).lower()], int(m.group(2))
+                claim(EntityMention(EntityKind.DATE, m.group(), f"{year:04d}-{month:02d}", m.span()))
+
+        for m in _DURATION_RE.finditer(text):
+            value = int(m.group(1))
+            unit = _duration_unit(m.group(2))
+            if value > 0 and unit and not _overlaps(m.span(), taken):
+                claim(EntityMention(EntityKind.DURATION, m.group(), f"P{value}{unit}", m.span()))
+
+        for m in _NUMBER_RE.finditer(text):
+            amount = _parse_amount(m.group())
+            if amount is not None and not _overlaps(m.span(), taken):
+                claim(EntityMention(EntityKind.NUMBER, m.group(), format_decimal(amount), m.span()))
+
+        return tuple(sorted((f for f in found if f.kind in kinds), key=lambda e: e.span))
+
+
+def _duration_unit(word: str) -> str | None:
+    lowered = word.lower()
+    for stem, code in _DURATION_UNITS.items():
+        if lowered.startswith(stem):
+            return code
+    return None
+
+
+def _iso_date(year: int, month: int, day: int) -> str | None:
+    """A regex match is not a date. ``31.02.2026`` matches and does not exist."""
+    try:
+        return date(year, month, day).isoformat()
+    except ValueError:
+        return None
+
+
+def _overlaps(span: tuple[int, int], taken: list[tuple[int, int]]) -> bool:
+    return any(span[0] < hi and lo < span[1] for lo, hi in taken)
