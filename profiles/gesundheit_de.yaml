@@ -1,0 +1,76 @@
+# A second client on the same engine: a statutory health insurer's assistant
+# handling appointments, reimbursement and coverage questions.
+#
+# Not a single line of guard code differs from telco_de. What differs is the
+# policy, and the differences are the point:
+#
+#   * No automatic repair. MEDIUM escalates to a human rather than rewriting,
+#     because a half-correct statement about coverage is worse than a handover.
+#   * Numbers are the critical entity here — a reimbursement rate or a deadline
+#     stated wrongly has consequences a tariff quote does not.
+#   * The assistant may commit to nothing at all.
+#   * No voice channel is offered, so no voice mode is defined. Asking this
+#     profile to resolve for voice raises rather than silently falling back.
+
+name: gesundheit_de
+locale: de-DE
+
+models:
+  chat: claude-opus-5
+  judge: claude-opus-5
+  judge_effort: medium      # higher effort: entailment matters more here
+  judge_min_budget_ms: 400
+
+routing:
+  none: continue
+  low: continue
+  medium: handover          # telco_de rewrites at this level; this client does not
+  high: handover
+  critical: safe_fallback
+
+guards:
+  persona:
+    persona:
+      address_form: formal
+      emoji_allowed: false
+      forbidden_phrases:
+        - "kein Ding"
+        - "garantiert"        # never promise a guaranteed outcome
+        - "auf jeden Fall"
+      max_sentence_words: 22
+      tts_safe: false         # text channel only
+      tone: ["formal", "empathetic", "cautious"]
+
+  grounding:
+    check_entities: ["number", "price", "date", "duration"]
+    allowed_commitments: []   # the assistant commits to nothing
+    escalate_below_confidence: 0.9   # escalate sooner than telco_de
+    severity_overrides:
+      ungrounded_number: critical
+      ungrounded_date: critical
+      unsupported_commitment: critical
+
+  injection:
+    scan_retrieved_documents: true
+    cross_turn_window: 8      # longer conversations in this domain
+
+  pii:
+    redact_inbound: true
+    entities: ["iban", "phone", "customer_id", "birthdate", "address"]
+    on_timeout: critical
+    on_error: critical
+
+modes:
+  chat:
+    budget_ms: 2500           # a slower answer is acceptable here
+    max_tier: 1
+    on_timeout: high
+    on_error: high
+
+fallback_message: >-
+  Diese Frage kann ich Ihnen nicht verlässlich beantworten. Bitte wenden Sie
+  sich an unsere Servicehotline, damit Sie eine verbindliche Auskunft erhalten.
+
+handover_message: >-
+  Ich verbinde Sie mit einer Mitarbeiterin oder einem Mitarbeiter, die oder der
+  Ihnen eine verbindliche Auskunft geben kann.
