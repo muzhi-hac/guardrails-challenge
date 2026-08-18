@@ -78,6 +78,7 @@ class PersonaGuard:
 
     name: ClassVar[str] = "persona"
     stage: ClassVar[Stage] = Stage.OUTPUT
+    tier: ClassVar[int] = 0
 
     DEFAULT_SEVERITY: ClassVar[Mapping[str, Severity]] = {
         findings.ADDRESS_FORM: Severity.MEDIUM,

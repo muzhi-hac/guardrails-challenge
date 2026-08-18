@@ -15,6 +15,7 @@ __all__ = [
     "GuardContext",
     "PersonaGuard",
     "build_verdict",
+    "default_guards",
     "effective_severity",
     "get_guard",
     "registered_guards",
@@ -35,3 +36,13 @@ def get_guard(name: str) -> Guard:
 
 def registered_guards() -> tuple[str, ...]:
     return tuple(_REGISTRY)
+
+
+def default_guards() -> tuple[Guard, ...]:
+    """Every registered guard, in registration order.
+
+    Order is part of the contract: the orchestrator reports verdicts in this
+    order regardless of which task finished first, so a trace is stable across
+    runs and machines.
+    """
+    return tuple(_REGISTRY.values())

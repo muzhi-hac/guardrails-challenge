@@ -252,14 +252,18 @@ class PipelineResult(BaseModel):
 
 
 def aggregate_severity(verdicts: Sequence[Verdict]) -> Severity:
-    """Highest severity among conclusive verdicts; :attr:`Severity.NONE` if none.
+    """The highest severity across every verdict; :attr:`Severity.NONE` if none.
 
-    Verdicts that are not conclusive (``ERROR``, ``TIMEOUT``, ``SKIPPED``)
-    contribute no severity. They are not "no problem found" — they are "no
-    answer" — and the orchestrator handles them through each guard's
-    fail-open/fail-closed policy instead.
+    Non-conclusive verdicts count. That is not obvious, and an earlier version
+    of this function excluded them on the reasoning that a guard which never
+    answered reports nothing about the content. The orchestrator disproved it:
+    guards only ever return ``PASS`` or ``FAIL``, so any ``ERROR`` or
+    ``TIMEOUT`` in this list was constructed by the orchestrator and *already
+    carries the client's fail-open or fail-closed severity*. Excluding it would
+    mean fail-closed silently did nothing — the exact failure the policy exists
+    to prevent.
+
+    ``SKIPPED`` verdicts carry :attr:`Severity.NONE`, so they contribute
+    nothing without needing a special case.
     """
-    return max(
-        (verdict.severity for verdict in verdicts if verdict.conclusive),
-        default=Severity.NONE,
-    )
+    return max((verdict.severity for verdict in verdicts), default=Severity.NONE)

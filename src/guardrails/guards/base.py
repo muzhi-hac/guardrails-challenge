@@ -56,6 +56,11 @@ class Guard(Protocol):
     name: ClassVar[str]
     stage: ClassVar[Stage]
 
+    tier: ClassVar[int]
+    """Which cascade tier this guard belongs to. 0 is deterministic, 1 calls a
+    model. The orchestrator gates on it *before* invoking, so a mode that caps
+    the cascade never pays for a guard it is not allowed to run."""
+
     DEFAULT_SEVERITY: ClassVar[Mapping[str, Severity]]
     """How serious each finding this guard can emit is, before the profile has
     its say. The guard knows the semantics — reading markup aloud is worse than

@@ -61,13 +61,20 @@ class TestSeverityAggregation:
         ]
         assert aggregate_severity(verdicts) is Severity.HIGH
 
-    @pytest.mark.parametrize(
-        "outcome", [Outcome.ERROR, Outcome.TIMEOUT, Outcome.SKIPPED]
-    )
-    def test_non_conclusive_verdicts_contribute_nothing(self, outcome):
-        """A guard that never answered is not a guard that found nothing."""
+    @pytest.mark.parametrize("outcome", [Outcome.ERROR, Outcome.TIMEOUT])
+    def test_a_guard_that_never_answered_still_counts(self, outcome):
+        """Guards only return PASS or FAIL, so an ERROR or TIMEOUT here was
+        built by the orchestrator and already carries the client's fail-open or
+        fail-closed severity. Excluding it would make fail-closed a no-op."""
         verdicts = [
             make_verdict(outcome=outcome, severity=Severity.CRITICAL),
+            make_verdict(outcome=Outcome.FAIL, severity=Severity.LOW),
+        ]
+        assert aggregate_severity(verdicts) is Severity.CRITICAL
+
+    def test_skipped_verdicts_carry_no_severity_of_their_own(self):
+        verdicts = [
+            make_verdict(outcome=Outcome.SKIPPED),
             make_verdict(outcome=Outcome.FAIL, severity=Severity.LOW),
         ]
         assert aggregate_severity(verdicts) is Severity.LOW
