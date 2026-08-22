@@ -3,12 +3,13 @@
 > **Status: chatbot with measured retrieval, no guard pipeline wired in yet.**
 > The knowledge base, a German-aware BM25 retriever, a multi-turn chatbot, a
 > real Anthropic-backed completion layer, a run-scoped JSONL trace writer, and
-> a CLI entry point all exist and are tested (`298 passed, 6 skipped`).
-> Retrieval recall is measured, not assumed — see the "已知局限" (known
-> limitations) section of [DESIGN.md](DESIGN.md). What is **not** here yet: the four
-> guards themselves and the orchestrator that would route their verdicts to an
-> action. `python -m chatbot` talks straight to the model over the retrieved
-> context with no guard in the loop.
+> a CLI entry point all exist and are covered by the test suite. Retrieval
+> recall is measured, not assumed — see
+> [DESIGN.md §5](DESIGN.md#5-how-we-know-it-works) for the numbers and
+> [§6](DESIGN.md#6-known-limitations) for the known limitations. What is **not**
+> here yet: the four guards themselves and the orchestrator that would route
+> their verdicts to an action. `python -m chatbot` talks straight to the model
+> over the retrieved context with no guard in the loop.
 
 A guardrails system for a multi-turn customer-service assistant in the telecom
 domain, covering four failure modes:
@@ -28,8 +29,8 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Set `ANTHROPIC_API_KEY` to run against the live API. Without it, the demo and
-evaluation fall back to recorded responses.
+`ANTHROPIC_API_KEY` is required to run the chatbot; there is no recorded-response
+fallback. The test suite does not need it — the live-API tests skip without it.
 
 ## Usage
 
@@ -42,8 +43,8 @@ PYTHONPATH=src ./.venv/bin/python -m chatbot --profile telco_de --question "Was 
 Omit `--question` to enter a REPL. Each run leaves one trace at
 `runs/<run_id>.jsonl`.
 
-The guard layer is not wired into this entry point yet — see the roadmap in
-DESIGN.md.
+The guard layer is not wired into this entry point yet — see
+[DESIGN.md §7, Roadmap](DESIGN.md#7-roadmap).
 
 ## Repository layout
 
@@ -53,6 +54,8 @@ DESIGN.md.
 | `src/guardrails/` | Guardrail implementations |
 | `src/chatbot.py` | Chatbot loop the guardrails wrap |
 | `src/utils.py` | Shared helpers |
+| `kb/` | German and English knowledge-base corpus |
+| `profiles/` | Client profiles (`telco_de`, `telco_en`, `gesundheit_de`) |
 | `tests/` | Test scenarios and results |
-| `examples/` | Demo notebook and example interactions |
-| `docs/evaluation.md` | Reflection and evaluation |
+| `examples/` | **Placeholder — not yet written.** Demo notebook and example interactions |
+| `docs/evaluation.md` | **Placeholder — not yet written.** Reflection and evaluation |
