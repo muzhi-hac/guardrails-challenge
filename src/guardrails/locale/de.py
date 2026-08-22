@@ -18,6 +18,7 @@ from __future__ import annotations
 import re
 from datetime import date
 from decimal import Decimal, InvalidOperation
+from functools import lru_cache
 from typing import ClassVar
 
 from guardrails.locale.base import (
@@ -136,6 +137,9 @@ def _split_compound(token: str) -> tuple[str, ...]:
     return parts if parts is not None and len(parts) > 1 else ()
 
 
+# Memoize _decompose to avoid exponential backtracking as the lexicon grows.
+# The lexicon is immutable, so cache entries never go stale within a process.
+@lru_cache(maxsize=None)
 def _decompose(rest: str) -> tuple[str, ...] | None:
     """把 ``rest`` 完整拆成词典成分；拆不完返回 ``None``。
 

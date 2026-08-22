@@ -34,4 +34,5 @@ LINKING_MORPHEMES: Final[tuple[str, ...]] = ("es", "en", "s", "n")
 """连接语素，按长度降序尝试：Kündigung|s|frist、Rufnummer|n|mitnahme。"""
 
 INFLECTION_SUFFIXES: Final[tuple[str, ...]] = ("en", "es", "er", "e", "n", "s")
-"""词形后缀。剥离结果**必须命中 LEXICON** 才产出，见 de.py 的 _stem_alias。"""
+"""词形后缀。用于 _stem_alias（剥孤立词的屈折）与 _decompose（复合词**最后一个成分**可带屈折）。
+两处都要求剥离结果**必须命中 LEXICON** 才产出。"""
