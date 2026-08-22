@@ -20,8 +20,8 @@ haben.
 
 Für die Widerrufserklärung besteht keine gesetzliche Formvorschrift: Sie
 können den Widerruf mündlich, telefonisch, per E-Mail, per Brief oder auf
-jedem anderen Weg erklären, der eindeutig erkennen lässt, dass Sie vom Vertrag
-zurücktreten möchten. Die Absendung innerhalb der Frist genügt. Eine
+jedem anderen Weg erklären, der eindeutig erkennen lässt, dass Sie den Vertrag
+widerrufen möchten. Die Absendung innerhalb der Frist genügt. Eine
 Begründung ist nicht erforderlich.
 
 Haben Sie ein Gerät erhalten, senden Sie es binnen 14 Tagen nach Ihrer

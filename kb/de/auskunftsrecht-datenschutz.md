@@ -14,9 +14,9 @@ unseren internen Abläufen.
 
 Nach Artikel 15 DSGVO haben Sie das Recht auf Auskunft über die zu Ihrer Person
 gespeicherten Daten. Die Auskunft ist binnen 1 Monat nach Eingang des Antrags
-zu erteilen. Ist der Antrag besonders umfangreich, kann die Frist um weitere
-2 Monate verlängert werden; über die Verlängerung und ihre Gründe ist innerhalb
-des ersten Monats zu informieren.
+zu erteilen (Artikel 12 Absatz 3 DSGVO). Ist der Antrag besonders umfangreich,
+kann die Frist um weitere 2 Monate verlängert werden; über die Verlängerung
+und ihre Gründe ist innerhalb des ersten Monats zu informieren.
 
 Die erste Kopie der Daten ist kostenlos. Neben der Auskunft bestehen die Rechte
 auf Berichtigung, Löschung, Einschränkung der Verarbeitung und

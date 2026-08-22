@@ -33,6 +33,23 @@ class Document:
 
 
 def _parse(path: Path, root: Path) -> Document:
+    """解析单个文档；任何失败都在消息里带上文件路径。
+
+    ``_parse_body`` 里已经手写了两处带路径的 ``ValueError``（缺 front matter、
+    缺字段）——那两处直接透传。其余失败模式（front matter 没闭合导致的
+    unpack 报错、locale 拼错导致的 ``ValueError``、YAML 本身格式错导致的
+    ``yaml.YAMLError``）在这里统一补上路径，不需要在每个失败点单独处理。
+    """
+    try:
+        return _parse_body(path, root)
+    except Exception as exc:
+        message = str(exc)
+        if message.startswith(str(path)):
+            raise
+        raise ValueError(f"{path}: {message}") from exc
+
+
+def _parse_body(path: Path, root: Path) -> Document:
     text = path.read_text(encoding="utf-8")
     if not text.startswith(_FRONT_MATTER):
         raise ValueError(f"{path}: missing front matter")
