@@ -1,8 +1,9 @@
-"""分块。
+"""Chunking.
 
-分块策略是溯源守卫假阳性的一个独立来源：把 ``Tarif M`` 和 ``29,99`` 切进两个块，
-守卫会把一个**正确**的回答判成无依据。所以这里的测试盯的是「实体和它描述的东西
-是否还在一起」，而不只是切了几块。
+The chunking strategy is an independent source of false positives for the grounding
+guard: split ``Tarif M`` and ``29,99`` into two different chunks, and the guard will
+judge a **correct** answer as unsupported. So the tests here watch whether an entity and
+what it describes stay together, not just how many chunks come out.
 """
 
 from __future__ import annotations
@@ -62,7 +63,7 @@ def test_chunk_ids_do_not_collide_across_locales(doc):
 
 
 def test_tariff_name_and_price_stay_in_one_chunk(doc):
-    """本模块最重要的一条断言。"""
+    """The single most important assertion in this module."""
     (chunk,) = [c for c in chunk_document(doc) if "Tarif M" in c.text]
     assert "29,99" in chunk.text
 
@@ -98,22 +99,24 @@ def test_table_rows_are_atomic():
         body=f"## Tabelle\n\n| Tarif | Preis |\n|---|---|\n{rows}",
     )
     chunks = chunk_document(doc, max_words=180)
-    assert len(chunks) > 1, "夹具应当强制二次切分，否则这条测试测不到任何东西"
+    assert len(chunks) > 1, "the fixture should force a second split, otherwise this test tests nothing"
     for chunk in chunks:
         lines = chunk.text.splitlines()
         for line in lines:
             if line.startswith("|"):
-                assert line.endswith("|"), "表格行被切断"
-        # 强化版：连续的表格行之间不能夹着空行——一旦夹了，GFM 就不再把它们
-        # 渲染成同一张表。用「line.startswith('|') 且 line.endswith('|')」的
-        # 弱断言即使空行被插入表格行之间也会通过，测不出 Defect 3。
+                assert line.endswith("|"), "a table row was cut in half"
+        # Stronger check: no blank line may sit between two consecutive table rows --
+        # once one does, GFM stops rendering them as the same table. The weak
+        # assertion "line.startswith('|') and line.endswith('|')" alone would still
+        # pass even with a blank line inserted between table rows, so it would never
+        # catch Defect 3.
         table_line_indexes = [i for i, line in enumerate(lines) if line.startswith("|")]
         for a, b in zip(table_line_indexes, table_line_indexes[1:]):
             if b == a + 1:
                 continue
             between = lines[a + 1:b]
             assert any(line.strip() for line in between), (
-                "两条相邻表格行之间出现了空行，表格被拆散"
+                "a blank line appeared between two adjacent table rows, tearing the table apart"
             )
 
 
@@ -182,7 +185,8 @@ def test_text_before_first_heading_is_kept():
 
 
 def test_real_corpus_chunk_ids_are_unchanged():
-    """回归锚点：这次修复不应该改变真实语料上任何现有 chunk_id。"""
+    """Regression anchor: this fix must not change any existing chunk_id in the real
+    corpus."""
     docs = load_documents(Path("kb"))
     doc = next(d for d in docs if d.doc_id == "tarife-mobilfunk" and d.locale is Locale.DE_DE)
     ids = [c.chunk_id for c in chunk_document(doc)]

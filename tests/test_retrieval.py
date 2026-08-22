@@ -1,8 +1,10 @@
-"""BM25 检索。
+"""BM25 retrieval.
 
-recall@k 在 Task 8 单独测；这里测的是检索器本身的性质，尤其**确定性** ——
-同分结果的顺序如果依赖字典遍历或浮点抖动，recall 测试就会在不同机器上给出不同
-数字，而那正是这个模块要产出的核心指标。
+recall@k is tested separately in Task 8; what's tested here are properties of the
+retriever itself, especially **determinism** -- if the order of tied results depends on
+dict iteration order or floating-point jitter, the recall tests would produce different
+numbers on different machines, and those numbers are exactly the core metric this
+module is meant to produce.
 """
 
 from __future__ import annotations
@@ -40,13 +42,16 @@ def test_scores_are_descending(kb):
 
 
 def test_exact_term_wins():
-    """§3.8 的核心主张：精确词必须能把正确文档顶上来。
+    """The core claim of §3.8: an exact term must be able to push the correct
+    document to the top.
 
-    语料有五个 chunk 而不是两个：BM25Okapi 的经典 idf 是
-    ``ln((N - df + 0.5) / (df + 0.5))``，当一个词恰好出现在语料一半的文档里
-    （两篇里的一篇），df=1、N=2 时 idf 精确为 0 —— 分数全灭，测的就不是
-    "精确词能不能赢" 了。五篇里出现一篇（df=1, N=5）给出 idf ≈ ln(4.5/1.5)
-    ≈ 1.10，是正常语料的量级。三条干扰句不含 "M"。
+    The corpus has five chunks, not two: BM25Okapi's classic idf is
+    ``ln((N - df + 0.5) / (df + 0.5))``. When a term appears in exactly half the
+    corpus's documents (one out of two), df=1, N=2 gives an idf of exactly 0 -- the
+    score is wiped out entirely, and the test would no longer be testing "can an
+    exact term win". With one occurrence out of five (df=1, N=5), idf ≈
+    ln(4.5/1.5) ≈ 1.10, the right order of magnitude for a real corpus. The three
+    distractor sentences contain no "M".
     """
     rules = get_rules(Locale.DE_DE)
     retriever = Bm25Retriever(
@@ -61,12 +66,15 @@ def test_exact_term_wins():
 
 
 def test_compound_query_matches_component_document():
-    """分词闭包的检索侧验收：查复合词，命中只写了成分的文档。
+    """The retrieval-side acceptance test for tokenizer closure: querying a
+    compound word hits a document that only ever writes the component words.
 
-    语料有五个 chunk 而不是两个：同上，"kündigung"/"frist" 只出现在一篇
-    文档里，两篇语料下 df=1, N=2 会把 idf 精确压到 0，掩盖了这个测试真正
-    要验的东西（复合词分解后能不能命中）。五篇（df=1, N=5）给出健康的正
-    idf。三条干扰句不含 "Kündigung" 或 "Frist"。
+    The corpus has five chunks, not two: as above, "kündigung"/"frist" appear in
+    only one document, and with a two-document corpus df=1, N=2 would push idf to
+    exactly 0, masking what this test is actually meant to verify (whether compound
+    decomposition makes the hit possible). Five documents (df=1, N=5) gives a
+    healthy positive idf. The three distractor sentences contain neither
+    "Kündigung" nor "Frist".
     """
     rules = get_rules(Locale.DE_DE)
     retriever = Bm25Retriever(
@@ -81,11 +89,12 @@ def test_compound_query_matches_component_document():
 
 
 def test_ascii_query_matches_umlaut_document():
-    """语料有五个 chunk 而不是两个，理由同上两个测试：两篇语料下
-
-    "kündigung" 的 df=1, N=2 会把 idf 精确压到 0。五篇（df=1, N=5）给出
-    健康的正 idf，测的才是 ascii 归一化命中带 Umlaut 的文档，而不是
-    "分数是不是全零"。三条干扰句不含 "Kündigung"。
+    """The corpus has five chunks, not two, for the same reason as the two tests
+    above: with a two-document corpus, "kündigung" at df=1, N=2 would push idf to
+    exactly 0. Five documents (df=1, N=5) gives a healthy positive idf, so what's
+    actually being tested is whether ASCII normalization hits a document with an
+    umlaut, not "did the score come out zero". The three distractor sentences
+    contain no "Kündigung".
     """
     rules = get_rules(Locale.DE_DE)
     retriever = Bm25Retriever(
@@ -100,14 +109,17 @@ def test_ascii_query_matches_umlaut_document():
 
 
 def test_isolated_term_gets_positive_idf_at_five_chunks():
-    """记录原因：为什么这些测试的语料是五篇而不是两篇。
+    """Records the reason: why the corpus in these tests is five documents, not
+    two.
 
-    BM25Okapi 的 idf 在词恰好出现在语料一半文档时（df=1, N=2）精确为 0 ——
-    这是两篇玩具语料的退化情况，不是生产语料的性质（真实语料里 747 个词
-    中只有 1.6% 的 idf <= 0，且都不是领域词）。这里直接钉住那条数学关系：
-    一个词出现在五篇里的恰好一篇，idf 必须严格为正，分数也必须严格为正。
-    如果有人把语料缩回两篇，这个测试和上面三个测试会一起变红，而不是
-    默默地全部返回零分。
+    BM25Okapi's idf is exactly 0 when a term appears in exactly half the corpus's
+    documents (df=1, N=2) -- that is a degenerate property of a two-document toy
+    corpus, not a property of the production corpus (in the real corpus, only 1.6%
+    of 747 terms have idf <= 0, and none of them are domain terms). This pins down
+    that mathematical relationship directly: for a term occurring in exactly one of
+    five documents, idf must be strictly positive, and so must the score. If someone
+    shrinks the corpus back down to two documents, this test and the three above it
+    will all go red together, instead of all silently returning a score of zero.
     """
     rules = get_rules(Locale.DE_DE)
     retriever = Bm25Retriever(
@@ -125,15 +137,18 @@ def test_isolated_term_gets_positive_idf_at_five_chunks():
 
 
 def test_ties_break_deterministically():
-    """同分时按 chunk_id 排 —— 否则 recall 数字在不同机器上不同。
+    """Ties are broken by chunk_id -- otherwise the recall numbers would differ
+    across machines.
 
-    这个测试原本也是两篇语料，且两篇都含 "Kündigung" —— 即 df=2, N=2。
-    BM25Okapi 在词出现在语料**每一篇**文档里时，idf 是
-    ``ln((N-df+0.5)/(df+0.5)) = ln(0.5/2.5) < 0``，两个 tied chunk 的分数
-    都变成负数，被检索器的正分过滤器直接滤掉，两边都返回空列表 —— 测的
-    就不是"同分平局怎么排"了，而是"根本没有命中"。加入三条不含
-    "Kündigung" 的干扰句把 df=2, N=5 撑到 idf ≈ ln(3.5/2.5) > 0，两个 tied
-    chunk 恢复为正分而且分数相等，测试才真正验的是平局排序。
+    This test originally used a two-document corpus too, both documents containing
+    "Kündigung" -- i.e. df=2, N=2. When a term appears in **every** document in the
+    corpus, BM25Okapi's idf is ``ln((N-df+0.5)/(df+0.5)) = ln(0.5/2.5) < 0``, so
+    both tied chunks' scores turn negative, get filtered out by the retriever's
+    positive-score filter, and both sides return an empty list -- the test would no
+    longer be checking "how are ties broken" but "did nothing match at all". Adding
+    three distractor sentences without "Kündigung" stretches df=2, N=5 to idf ≈
+    ln(3.5/2.5) > 0, restoring both tied chunks to a positive, equal score, so the
+    test genuinely exercises tie-breaking.
     """
     rules = get_rules(Locale.DE_DE)
     distractors = [
@@ -151,7 +166,8 @@ def test_ties_break_deterministically():
 
 
 def test_locales_are_isolated(kb):
-    """英语查询不得召回德语文档 —— 两个渠道的索引是分开的。"""
+    """An English query must not retrieve a German document -- the two channels'
+    indexes are kept separate."""
     results = kb.for_locale(Locale.EN_GB).search("cancellation notice period", k=5)
     assert results
     assert all(r.item.locale is Locale.EN_GB for r in results)
@@ -165,13 +181,14 @@ def test_unknown_locale_names_what_is_available(kb):
 
 
 def test_none_locale_raises_keyerror(kb):
-    """None 是实际的错误参数 —— 一个从未填充的 profile 字段。"""
+    """None is a real-world bad argument -- a profile field that was never filled
+    in."""
     with pytest.raises(KeyError, match="de-DE"):
         kb.for_locale(None)  # type: ignore[arg-type]
 
 
 def test_unhashable_locale_raises_keyerror(kb):
-    """不可哈希的参数也必须产生信息性的 KeyError。"""
+    """An unhashable argument must also produce an informative KeyError."""
     with pytest.raises(KeyError, match="de-DE"):
         kb.for_locale(['not', 'hashable'])  # type: ignore[arg-type]
 

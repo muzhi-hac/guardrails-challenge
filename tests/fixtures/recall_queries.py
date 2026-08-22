@@ -1,34 +1,45 @@
-"""检索 recall 的固定查询集。
+"""Fixed query set for retrieval recall.
 
-判定按 ``doc_id``，不绑定 ``chunk_id``，也不绑定完整排序：同一文档的哪个小节被召回
-是分块策略的实现细节，写进断言会让分块的每次调整都误报成检索退化。
+Judged by ``doc_id``, not tied to ``chunk_id`` or to full ranking order: which section of
+a document gets retrieved is an implementation detail of the chunking strategy, and
+pinning it into assertions would turn every chunking adjustment into a false alarm of
+retrieval regression.
 
-一个查询允许有多个正确文档 —— ``tarife-mobilfunk`` 与 ``vertragslaufzeit-kuendigung``
-必然共享期限事实，强行指定唯一正确文档等于把内容组织方式写进断言。
+A query is allowed to have more than one correct document -- ``tarife-mobilfunk`` and
+``vertragslaufzeit-kuendigung`` necessarily share duration facts, and forcing a single
+correct document would write the content's organization into the assertion.
 
-**改写型提问是刻意放进来的**：``known_limitation`` 按查询与文档的词汇关系分类
-——查询用的是不是文档自己的术语——而不是按"这条会不会命中"的预期难度分类。分类
-只描述输入，命中与否留给测量去报告，这样测出来的数字才是发现，不是分类时就定
-好的结论。
+**Paraphrase-style queries are deliberately included**: ``known_limitation`` classifies
+by the lexical relationship between query and document -- whether the query uses the
+document's own terminology or not -- rather than by expected difficulty ("will this one
+hit"). The classification describes only the input; whether it hits is left for the
+measurement to report, so the resulting numbers are a finding, not a conclusion already
+baked into the classification.
 
-**派生形态是第二类已知局限，边界不同于改写。** 德语分词器对屈折变化做词典校验的
-还原（如名词的格/数后缀），但不做派生形态还原：动词分词（``gedrosselt``）永远到
-不了对应的名词（``Drosselung``），因为词干化只剥离已登记的名词屈折后缀，再拿结
-果去词典核对——``gedrosselt`` 本身不是词典条目，也没有剥离动词 "ge-" 前缀的机制。
-"Ab wann wird gedrosselt?" 和 "Wann beginnt die Drosselung meines Datenvolumens?"
-是同一个客户意图的两种问法，前者是真实、自然的德语提问，只是恰好踩在这条派生形
-态的边界上。两种问法都留在集合里，是故意的：只留下能命中的那个问法，测不出边界
-在哪里；两个都留，边界就写在数字里。
+**Derivational forms are a second, distinct known limitation, with a different boundary
+than paraphrase.** The German tokenizer restores inflection through lexicon-checked
+stemming (e.g. a noun's case/number suffixes), but does not restore derivational
+morphology: tokenizing a verb (``gedrosselt``) never reaches its corresponding noun
+(``Drosselung``), because stemming only strips registered noun inflection suffixes and
+then checks the result against the lexicon -- ``gedrosselt`` itself is not a lexicon
+entry, and there is no mechanism to strip the verbal "ge-" prefix. "Ab wann wird
+gedrosselt?" and "Wann beginnt die Drosselung meines Datenvolumens?" are two phrasings of
+the same customer intent; the first is a real, natural German question that happens to
+sit right on this derivational boundary. Keeping both phrasings in the set is
+deliberate: keeping only the one that hits would hide where the boundary is; keeping both
+writes the boundary into the numbers.
 
-**测量结果**：五条局限用例里，三条在 k=5 命中，其中两条命中在第 1 位（见
-``test_recall_report`` 打印的逐条数字）。词法检索对口语化说法的鲁棒性比分类时
-假设的要好，因为顾客的真实提问通常仍带着至少一个能在分词后存活的领域名词——
-``Anschluss``（"Ich ziehe um, was passiert mit meinem Anschluss?" 命中
-``kb/de/umzug.md``）、``moving``（"I am moving house" 命中 ``kb/en/umzug.md``
-标题 "Moving home"）。两条完全未命中的用例，一条是起区分作用的词全都缺失
-（"Wie komme ich aus meinem Vertrag heraus?"），另一条是隔着派生形态边界够
-不到（``gedrosselt``）——这两种失配的原因不同，`known_limitation` 的两个取值
-把它们分开正是为了让这个差异在数字里可见。
+**Measured result**: of the five limitation cases, three hit within k=5, two of them at
+rank 1 (see the per-case numbers printed by ``test_recall_report``). Lexical retrieval is
+more robust to colloquial phrasing than the classification alone would suggest, because a
+customer's actual question usually still carries at least one domain noun that survives
+tokenization -- ``Anschluss`` ("Ich ziehe um, was passiert mit meinem Anschluss?" hits
+``kb/de/umzug.md``), ``moving`` ("I am moving house" hits ``kb/en/umzug.md``, titled
+"Moving home"). Of the two cases that miss entirely, one is missing every distinguishing
+word ("Wie komme ich aus meinem Vertrag heraus?"), and the other falls on the far side of
+the derivational boundary (``gedrosselt``) -- these are two different failure causes, and
+the two ``known_limitation`` values exist precisely to keep that difference visible in
+the numbers.
 """
 
 from __future__ import annotations
@@ -43,25 +54,29 @@ class RecallCase(NamedTuple):
     expected_doc_ids: frozenset[str]
     locale: Locale
     known_limitation: str = ""
-    """按查询与文档的词汇关系分类，不是按预期难度分类：
+    """Classifies by the lexical relationship between query and document, not by
+    expected difficulty:
 
-    空字符串 —— 查询用的是文档自身的术语：起区分作用的领域词在查询和文档里
-    都出现。
+    empty string -- the query uses the document's own terminology: the distinguishing
+    domain words appear in both query and document.
 
-    ``paraphrase`` —— 查询是顾客自己的说法，不是文档的术语，起区分作用的
-    领域词缺失或很弱。不等于词汇零重叠：顾客提问通常仍带着至少一个共享词，
-    这一类里有两条就是如此（``Anschluss``、``moving``）。
+    ``paraphrase`` -- the query is the customer's own phrasing, not the document's
+    terminology; the distinguishing domain words are missing or weak. This is not the
+    same as zero lexical overlap: a customer's question usually still carries at least
+    one shared word, and two cases in this category do exactly that (``Anschluss``,
+    ``moving``).
 
-    ``derivation`` —— 查询用的形态变体是分词器跨不过去的边界：分词器对屈折
-    变化做词典校验的还原，但不做派生形态还原。``gedrosselt``（动词分词）和
-    ``Drosselung``（名词）因此分出互不相交的词。"""
+    ``derivation`` -- the query uses a morphological variant that the tokenizer cannot
+    cross: the tokenizer restores inflection through lexicon-checked stemming, but does
+    not restore derivational morphology. ``gedrosselt`` (a tokenized verb) and
+    ``Drosselung`` (the noun) therefore land on disjoint tokens."""
 
 
 DE = Locale.DE_DE
 EN = Locale.EN_GB
 
 RECALL_QUERIES: tuple[RecallCase, ...] = (
-    # --- 德语：精确词 ---
+    # --- German: exact terms ---
     RecallCase("Was kostet Tarif M?", frozenset({"tarife-mobilfunk"}), DE),
     RecallCase("Wie hoch ist die Kündigungsfrist?",
                frozenset({"vertragslaufzeit-kuendigung"}), DE),
@@ -75,9 +90,9 @@ RECALL_QUERIES: tuple[RecallCase, ...] = (
                frozenset({"datenvolumen-drosselung"}), DE),
     RecallCase("Widerrufsfrist 14 Tage", frozenset({"widerrufsrecht"}), DE),
     RecallCase("Wann erreiche ich den Kundenservice?", frozenset({"servicezeiten"}), DE),
-    # --- 德语：ASCII 变音符输入（真实用户行为）---
+    # --- German: ASCII umlaut input (real user behavior) ---
     RecallCase("Kuendigung Frist", frozenset({"vertragslaufzeit-kuendigung"}), DE),
-    # --- 德语：改写型（已知局限：paraphrase，查询用顾客说法而非文档术语）---
+    # --- German: paraphrase-style (known limitation: paraphrase, query uses the customer's own wording rather than document terms) ---
     RecallCase("Wie komme ich aus meinem Vertrag heraus?",
                frozenset({"vertragslaufzeit-kuendigung"}), DE,
                known_limitation="paraphrase"),
@@ -86,11 +101,11 @@ RECALL_QUERIES: tuple[RecallCase, ...] = (
     RecallCase("Mein Internet ist seit gestern weg",
                frozenset({"stoerung-entstoerfrist"}), DE,
                known_limitation="paraphrase"),
-    # --- 德语：派生形态型（已知局限：derivation，动词分词到不了对应名词）---
+    # --- German: derivational-form (known limitation: derivation, verb tokenization cannot reach the corresponding noun) ---
     RecallCase("Ab wann wird gedrosselt?",
                frozenset({"datenvolumen-drosselung"}), DE,
                known_limitation="derivation"),
-    # --- 英语 ---
+    # --- English ---
     RecallCase("How much does Tariff M cost?", frozenset({"tarife-mobilfunk"}), EN),
     RecallCase("notice period for cancellation",
                frozenset({"vertragslaufzeit-kuendigung"}), EN),

@@ -1,4 +1,5 @@
-"""英语分词：平凡实现。没有复合词分解，这是有意的不对称。"""
+"""English tokenization: a trivial implementation. There is no compound
+decomposition, and that asymmetry is deliberate."""
 
 from __future__ import annotations
 
@@ -29,5 +30,6 @@ def test_prices_stay_one_token(rules):
 
 
 def test_no_compound_splitting(rules):
-    """英语不做复合词分解 —— 显式断言这个不对称，避免以后有人'补齐'它。"""
+    """English does not do compound decomposition -- asserting this asymmetry
+    explicitly guards against someone later 'completing' it."""
     assert "contract" not in rules.tokenize("Contractual")

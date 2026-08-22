@@ -1,9 +1,10 @@
-"""Provider 层。
+"""The provider layer.
 
-哈希键的宽度是这里唯一真正微妙的东西：只用 (system, messages) 的话，同一段提示词在
-不同 max_tokens 或不同模型下会错误命中同一条回放 —— 那种 bug 表现为「测试通过但测的
-是别的东西」，是最难发现的一类。所以键里有 max_tokens 和 model，并且有**负向测试**
-钉住这一点。
+The width of the hash key is the one genuinely subtle thing here: using only
+(system, messages), the same prompt under a different max_tokens or a different model
+would wrongly hit the same recorded replay -- that class of bug shows up as "the test
+passes, but it's testing something else", which is the hardest kind to catch. So
+max_tokens and model are part of the key, and **negative tests** pin that down.
 """
 
 from __future__ import annotations
@@ -47,7 +48,8 @@ def test_key_changes_with_schema_version(monkeypatch):
 
 
 def test_key_ignores_irrelevant_whitespace_in_serialisation():
-    """规范化序列化：字段有序、无空白差异。"""
+    """Canonical serialization: fields are ordered, and whitespace differences
+    don't matter."""
     a = fixture_key(system=SYSTEM, messages=MESSAGES, max_tokens=512, model="m")
     b = fixture_key(system=SYSTEM, messages=(Turn("user", "Was kostet Tarif M?"),),
                     max_tokens=512, model="m")
@@ -74,7 +76,7 @@ async def test_replays_recorded_response(tmp_path: Path):
 
 
 async def test_miss_raises_rather_than_falling_back(tmp_path: Path):
-    """静默回退等于测试在骗人。"""
+    """A silent fallback would mean the test is lying to you."""
     store = tmp_path / "completions.json"
     store.write_text("{}", encoding="utf-8")
     provider = FixtureCompletion(store, model="m")
@@ -83,7 +85,7 @@ async def test_miss_raises_rather_than_falling_back(tmp_path: Path):
 
 
 async def test_different_max_tokens_does_not_hit_the_same_recording(tmp_path: Path):
-    """负向测试：这是宽哈希键存在的全部理由。"""
+    """Negative test: this is the entire reason the wide hash key exists."""
     key = fixture_key(system=SYSTEM, messages=MESSAGES, max_tokens=512, model="m")
     store = tmp_path / "completions.json"
     store.write_text(json.dumps({key: {"text": "x", "model": "m",
@@ -96,7 +98,8 @@ async def test_different_max_tokens_does_not_hit_the_same_recording(tmp_path: Pa
 
 
 async def test_malformed_record_missing_field_names_file_key_and_field(tmp_path: Path):
-    """字段格式检查器测试之一：缺字段的错误信息要能定位问题，而不是裸 KeyError。"""
+    """One of the field-shape checker tests: an error about a missing field must be
+    able to locate the problem, not surface as a bare KeyError."""
     key = fixture_key(system=SYSTEM, messages=MESSAGES, max_tokens=512, model="m")
     store = tmp_path / "completions.json"
     store.write_text(json.dumps({
@@ -114,7 +117,8 @@ async def test_malformed_record_missing_field_names_file_key_and_field(tmp_path:
 
 
 async def test_non_integer_token_count_is_rejected_not_coerced(tmp_path: Path):
-    """`int("42")` 会成功，从而掩盖 fixture 编写错误 —— 拒绝而不是强转。"""
+    """`int("42")` would succeed, which would mask a fixture-authoring mistake --
+    reject it instead of coercing it."""
     key = fixture_key(system=SYSTEM, messages=MESSAGES, max_tokens=512, model="m")
     store = tmp_path / "completions.json"
     store.write_text(json.dumps({
@@ -133,7 +137,8 @@ async def test_non_integer_token_count_is_rejected_not_coerced(tmp_path: Path):
 
 
 async def test_missing_stop_reason_raises_naming_file_key_and_field(tmp_path: Path):
-    """`stop_reason` 是新加的必填字段——缺它必须和缺其他字段一样，报错能定位问题。"""
+    """`stop_reason` is a newly required field -- missing it must be just as
+    locatable an error as missing any other field."""
     key = fixture_key(system=SYSTEM, messages=MESSAGES, max_tokens=512, model="m")
     store = tmp_path / "completions.json"
     store.write_text(json.dumps({
@@ -152,9 +157,11 @@ async def test_missing_stop_reason_raises_naming_file_key_and_field(tmp_path: Pa
 
 
 def test_stop_reason_distinguishes_truncated_from_complete_empty_reply():
-    """回归守卫：这就是本次修复要修的那个问题——text 为空时，调用方必须能靠
-    stop_reason 区分「预算耗尽、思考占满了配额」和「模型正常结束、确实无话可说」，
-    而不是把两者都读成"模型什么都没说"。"""
+    """Regression guard: this is exactly the problem this fix addresses -- when
+    text is empty, the caller must be able to use stop_reason to tell "budget ran
+    out, thinking consumed the whole allowance" apart from "the model finished
+    normally and genuinely had nothing to say", instead of reading both as
+    "the model said nothing"."""
     truncated = CompletionResult(
         text="", model="m", input_tokens=10, output_tokens=0,
         latency_ms=1.0, stop_reason="max_tokens",

@@ -215,7 +215,7 @@ class TestCrossLocale:
         assert de[0].normalized != en[0].normalized
 
 
-# --- 货币：英语渠道卖的是同一份 EUR 资费 -----------------------------------
+# --- Currency: the English channel sells the same EUR tariffs -------------
 
 
 def test_extracts_eur_price_with_symbol():
@@ -235,7 +235,8 @@ def test_extracts_eur_price_with_code():
 
 
 def test_gbp_still_normalises_as_gbp():
-    """加 EUR 不能把 GBP 顺手改坏 —— 归一化币种必须跟着匹配到的符号走。"""
+    """Adding EUR support must not accidentally break GBP -- the normalized
+    currency must follow whichever symbol actually matched."""
     (mention,) = [
         m for m in RULES.extract_entities("It costs £19.99.", ALL_KINDS)
         if m.kind is EntityKind.PRICE

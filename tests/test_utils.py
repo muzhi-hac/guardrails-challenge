@@ -1,10 +1,12 @@
-"""Trace 落盘。
+"""Writing traces to disk.
 
-schema_version 让评测脚本能拒绝旧格式而不是误读；run_id 是**记录内的字段**而不只是
-文件名，否则记录被合并或转存后就失去了归属。
+schema_version lets an evaluation script reject an old format instead of misreading it;
+run_id is a **field inside the record itself**, not just the filename, or a record would
+lose its provenance once merged or copied elsewhere.
 
-error_type 只记异常类型名不记 message —— 和 M5 的 ERROR verdict 同一条纪律，那里也有
-一条测试断言 message 不出现在序列化结果里。
+error_type records only the exception type name, never the message -- the same
+discipline as M5's ERROR verdict, where a test likewise asserts that the message never
+appears in the serialized result.
 """
 
 from __future__ import annotations
@@ -49,7 +51,8 @@ def test_error_type_only_never_the_message(tmp_path: Path):
 
 
 def test_caller_cannot_forge_provenance(tmp_path: Path):
-    """schema_version/run_id/ts 是 writer 的出处字段；调用方传同名 key 不能覆盖。"""
+    """schema_version/run_id/ts are the writer's own provenance fields; a caller
+    passing a key of the same name cannot override them."""
     writer = TraceWriter(tmp_path, run_id="echte-run-id")
     writer.write(
         {
@@ -118,7 +121,8 @@ def test_load_profile_malformed_yaml_names_the_file(tmp_path: Path):
 
 
 def test_load_profile_validation_failure_names_the_file(tmp_path: Path):
-    """解析成功但 Profile.model_validate 拒绝的情况一样要点名文件。"""
+    """When parsing succeeds but Profile.model_validate rejects it, the file must
+    still be named."""
     bad = tmp_path / "incomplete.yaml"
     bad.write_text("name: nur-ein-feld\n", encoding="utf-8")
     with pytest.raises(ValueError, match=re.escape(str(bad))):

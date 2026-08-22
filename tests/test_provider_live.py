@@ -1,6 +1,7 @@
-"""真实端点调用。默认跳过 —— 需要 -m live 才跑。
+"""Calls the real endpoint. Skipped by default -- needs -m live to run.
 
-凭据与端点只从环境变量读，不出现在仓库里的任何文件中。
+Credentials and endpoints are read only from environment variables; they never appear
+in any file in the repository.
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ pytestmark = pytest.mark.live
 @pytest.fixture
 def provider():
     if not os.getenv("ANTHROPIC_API_KEY"):
-        pytest.skip("ANTHROPIC_API_KEY 未设置")
+        pytest.skip("ANTHROPIC_API_KEY is not set")
     return AnthropicCompletion(model="claude-opus-5")
 
 

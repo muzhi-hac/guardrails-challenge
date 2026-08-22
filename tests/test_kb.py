@@ -1,7 +1,9 @@
-"""知识库的结构性约束。
+"""Structural constraints on the knowledge base.
 
-内容对不对靠人读；这里测的是那些一旦破了、下游全部静默失真的性质：唯一键、
-德英事实一致、以及实体密度 —— 语料实体稀疏等于溯源守卫没有东西可测。
+Whether the content itself is correct is a human's job to read; what's tested here are
+the properties that, once broken, distort everything downstream silently: unique keys,
+DE/EN fact agreement, and entity density -- a corpus with sparse entities gives the
+grounding guard nothing to test against.
 """
 
 from __future__ import annotations
@@ -26,21 +28,24 @@ MIRRORED_DOC_IDS = frozenset({
     "umzug",
 })
 
-# 事实表按 doc_id 钉死 —— 溯源守卫要拿回复里的价格去跟这些字面值核对，所以语料
-# 里的每一个数字都是规格（spec），不是「凑够 >=3 个实体」就算过关的细节。
+# The fact table is pinned by doc_id -- the grounding guard checks prices in a reply
+# against these literal values, so every number in the corpus is a spec, not a detail
+# that's satisfied once you've scraped together ">=3 entities".
 #
-# 只比较「德语价格集合 == 英语价格集合」（见 test_mirrored_prices_match_across_
-# locales）测不出「两边被同时改坏」：把 19,99 EUR 和 19.99 EUR 一起改成 18,99 /
-# 18.99，德英仍然相等，测试仍然绿。这里把从文档里读出来的期望值写成字面量，
-# 任何一侧偏离这些字面量都会失败，不管另一侧有没有同步偏离。
+# Comparing only "the German price set == the English price set" (see
+# test_mirrored_prices_match_across_locales) cannot catch "both sides broken together":
+# change 19,99 EUR and 19.99 EUR together into 18,99 / 18.99, and DE still equals EN, so
+# that test would stay green. Here the expected values read out of the documents are
+# written as literals, so a deviation on either side fails, regardless of whether the
+# other side drifted in step.
 #
-# 每个值都是从对应文档正文里读出来的，不是编出来的：
-#   tarife-mobilfunk           费率表三档月费：19,99 / 29,99 / 49,99 EUR
-#   rechnung-zahlungsarten     「Zahlungsverzug und Mahngebühr」：首次催缴费 5,00 EUR
-#   roaming-eu                 「Roaming außerhalb der EU」：欧盟外每 MB 数据 0,49 EUR
-#   umzug                      「Umzugsservice」：搬迁一次性费用 29,90 EUR
-#   datenvolumen-drosselung    「Datenautomatik」：追加 1 GB 数据自动计费 3,00 EUR
-#                              （仅德语，没有英文镜像——不在 MIRRORED_DOC_IDS 里）
+# Each value is read out of the corresponding document's body, not invented:
+#   tarife-mobilfunk           tariff table, three monthly prices: 19,99 / 29,99 / 49,99 EUR
+#   rechnung-zahlungsarten     "Zahlungsverzug und Mahngebühr": first reminder fee 5,00 EUR
+#   roaming-eu                 "Roaming außerhalb der EU": 0,49 EUR per MB outside the EU
+#   umzug                      "Umzugsservice": one-off moving fee 29,90 EUR
+#   datenvolumen-drosselung    "Datenautomatik": extra 1 GB auto-billed at 3,00 EUR
+#                              (German only, no English mirror -- not in MIRRORED_DOC_IDS)
 PRICE_EXPECTATIONS: dict[str, frozenset[str]] = {
     "tarife-mobilfunk": frozenset({"19.99 EUR", "29.99 EUR", "49.99 EUR"}),
     "rechnung-zahlungsarten": frozenset({"5.00 EUR"}),
@@ -67,7 +72,8 @@ def test_unique_key_is_locale_and_doc_id(documents):
 
 
 def test_english_mirrors_reuse_german_doc_ids(documents):
-    """镜像共用逻辑 doc_id —— 区分靠 locale，不靠改名。"""
+    """A mirror shares its logical doc_id with the original -- locale, not renaming,
+    is what tells them apart."""
     english = {d.doc_id for d in documents if d.locale is Locale.EN_GB}
     german = {d.doc_id for d in documents if d.locale is Locale.DE_DE}
     assert english == MIRRORED_DOC_IDS
@@ -81,7 +87,7 @@ def test_front_matter_complete(documents):
 
 
 def test_every_document_has_at_least_three_checkable_entities(documents):
-    """用 extract_entities 计数，不靠人工判断。"""
+    """Counted via extract_entities, not by manual judgment."""
     for doc in documents:
         rules = get_rules(doc.locale)
         mentions = rules.extract_entities(doc.body, tuple(EntityKind))
@@ -89,7 +95,8 @@ def test_every_document_has_at_least_three_checkable_entities(documents):
 
 
 def test_mirrored_prices_match_across_locales(documents):
-    """德英同一 doc_id 的价格集合必须逐项相等，否则跨 locale 评测测的是内容差异。"""
+    """The price sets for the same doc_id in German and English must match item for
+    item, or a cross-locale evaluation ends up measuring content differences instead."""
     def prices(doc):
         rules = get_rules(doc.locale)
         return {
@@ -143,14 +150,17 @@ def test_mirrored_numbers_match_across_locales(documents):
 
 
 def test_price_fact_table_matches_documents(documents):
-    """把事实表的具体数值钉死在测试里，而不只是比较德英两侧是否相等。
+    """Pins the fact table's exact values into the test, rather than only comparing
+    whether the German and English sides agree with each other.
 
-    ``test_mirrored_prices_match_across_locales`` 只能发现「德英不一致」，发现不了
-    「德英被同步改坏」——把 19,99 EUR 连同它的英文镜像一起改成 18,99 EUR，德语
-    集合仍然等于英语集合，那个测试仍然是绿的。语料里的事实表是溯源守卫比对的
-    规格本身，所以这里把从文档里读出来的期望值写成字面量常量
-    （``PRICE_EXPECTATIONS``），任何一侧偏离字面量都必须失败，不管另一侧有没
-    有同步偏离。
+    ``test_mirrored_prices_match_across_locales`` can only catch "DE and EN disagree",
+    not "DE and EN were broken together": change 19,99 EUR, along with its English
+    mirror, into 18,99 EUR on both sides, and the German set still equals the English
+    set -- that test stays green. The fact table in the corpus is the very spec the
+    grounding guard compares replies against, so here the expected values read out of
+    the documents are written as literal constants (``PRICE_EXPECTATIONS``); a
+    deviation from the literal on either side must fail, regardless of whether the
+    other side drifted in step.
     """
 
     def prices(doc):
@@ -165,8 +175,9 @@ def test_price_fact_table_matches_documents(documents):
         by_doc_id.setdefault(doc.doc_id, []).append(doc)
 
     for doc_id, expected in PRICE_EXPECTATIONS.items():
-        # 期望集合本身不能是空的——空集合会让下面的相等断言在「文档根本没有
-        # 价格实体」时也通过，重现 finding 1 描述的「vacuous comparison」问题。
+        # The expected set itself must not be empty -- an empty set would let the
+        # equality assertion below pass even when the document has no price entities
+        # at all, reproducing the "vacuous comparison" problem described in finding 1.
         assert expected, f"{doc_id}: expected price set must not be empty"
         matching = by_doc_id.get(doc_id, [])
         assert matching, f"{doc_id}: no document with this doc_id was loaded"
@@ -175,7 +186,8 @@ def test_price_fact_table_matches_documents(documents):
 
 
 def test_no_document_contains_credentials_or_endpoints(documents):
-    """语料是要交付的内容，凭据与端点名不能漏进来。
+    """The corpus is deliverable content -- no credentials or endpoint names may leak
+    into it.
 
     This test enforces the policy by pattern rather than by naming specific
     forbidden strings. A test that hardcodes the secret becomes the repository's
@@ -207,7 +219,8 @@ def test_no_document_contains_credentials_or_endpoints(documents):
 
 
 def test_unterminated_front_matter_names_the_file(tmp_path):
-    """front matter 开了没关：报错必须点名是哪个文件，而不是裸的 unpack 报错。"""
+    """Front matter opened but never closed: the error must name the offending file,
+    not a bare unpack error."""
     bad = tmp_path / "broken.md"
     bad.write_text(
         "---\ndoc_id: x\ntitle: X\nlocale: de-DE\nversion: 2026-01-01\n"
@@ -219,7 +232,8 @@ def test_unterminated_front_matter_names_the_file(tmp_path):
 
 
 def test_invalid_locale_names_the_file(tmp_path):
-    """locale 拼错（比如 de_DE 而不是 de-DE）：报错必须点名是哪个文件。"""
+    """A misspelled locale (e.g. de_DE instead of de-DE): the error must name the
+    offending file."""
     bad = tmp_path / "typo-locale.md"
     bad.write_text(
         "---\ndoc_id: x\ntitle: X\nlocale: de_DE\nversion: 2026-01-01\n---\nBody.\n",
@@ -230,7 +244,8 @@ def test_invalid_locale_names_the_file(tmp_path):
 
 
 def test_malformed_yaml_names_the_file(tmp_path):
-    """YAML 本身格式错（比如冒号后缺值导致的缩进/语法错误）：报错必须点名文件。"""
+    """Malformed YAML itself (e.g. an indentation/syntax error from a missing value
+    after a colon): the error must name the file."""
     bad = tmp_path / "bad-yaml.md"
     bad.write_text(
         "---\ndoc_id: x\ntitle: [unclosed\nlocale: de-DE\nversion: 2026-01-01\n---\nBody.\n",

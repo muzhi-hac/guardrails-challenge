@@ -1,8 +1,10 @@
-"""检索 recall@k。
+"""Retrieval recall@k.
 
-这是 §5 数字表里「检索 recall（单独测）」那一行。单独测量而不是折进一个总分，是因为
-检索质量**上界了**溯源守卫：检索 miss 会让守卫把一个正确回答判成无依据，那是可归因
-于检索、不是可归因于守卫的假阳性。
+This is the "retrieval recall (measured separately)" row in the §5 numbers table.
+It is measured separately rather than folded into one overall score because retrieval
+quality **upper-bounds** the grounding guard: a retrieval miss makes the guard judge a
+correct answer as unsupported, and that false positive is attributable to retrieval,
+not to the guard.
 """
 
 from __future__ import annotations
@@ -34,26 +36,28 @@ def recall_at_k(kb: KnowledgeBase, cases, k: int) -> float:
 
 @pytest.mark.parametrize("case", RECALL_QUERIES, ids=lambda c: c.query[:32])
 def test_exact_term_queries_hit_at_5(kb, case):
-    """非局限型查询必须在 k=5 内命中。已知局限不设门槛，只报告数字。"""
+    """Non-limitation queries must hit within k=5. Known-limitation cases have no
+    threshold -- only the numbers are reported."""
     if case.known_limitation:
-        pytest.skip("已知局限型查询，数字由 test_recall_report 记录")
-    assert hits(kb, case, 5), f"未命中: {case.query}"
+        pytest.skip("known-limitation query; the number is recorded by test_recall_report")
+    assert hits(kb, case, 5), f"no hit: {case.query}"
 
 
 def test_recall_report(kb, capsys):
-    """打印 recall@1/@3/@5，供 §5 数字表抄录。断言只设下限，避免脆弱。"""
+    """Prints recall@1/@3/@5 for transcription into the §5 numbers table. The
+    assertion only sets a floor, to avoid brittleness."""
     exact = [c for c in RECALL_QUERIES if not c.known_limitation]
     limitation = [c for c in RECALL_QUERIES if c.known_limitation]
     kinds = sorted({c.known_limitation for c in limitation})
-    lines = ["", "检索 recall（分母见括号）"]
-    rows = [("精确词", exact)]
-    rows += [(f"局限-{kind}", [c for c in limitation if c.known_limitation == kind])
+    lines = ["", "retrieval recall (denominator in parentheses)"]
+    rows = [("exact-term", exact)]
+    rows += [(f"limitation-{kind}", [c for c in limitation if c.known_limitation == kind])
              for kind in kinds]
-    rows += [("全部", RECALL_QUERIES)]
+    rows += [("overall", RECALL_QUERIES)]
     for label, cases in rows:
         row = " ".join(f"@{k}={recall_at_k(kb, cases, k):.2f}" for k in (1, 3, 5))
         lines.append(f"  {label} (n={len(tuple(cases))}): {row}")
-    lines.append("  逐条（局限用例）：")
+    lines.append("  per case (limitation):")
     for case in limitation:
         row = " ".join(f"@{k}={recall_at_k(kb, [case], k):.2f}" for k in (1, 3, 5))
         lines.append(f"    [{case.known_limitation}] {case.query}: {row}")

@@ -1,7 +1,8 @@
-"""Chatbot 链路。
+"""The chatbot pipeline.
 
-这里**不接守卫** —— Action 编排与 REWRITE 属于 M7。M6 要证明的是三件事：
-检索结果真的进了提示词、文档被标成不可信数据、以及 ChatTurn 带够了 M7 需要的证据。
+No guards are wired in here -- Action orchestration and REWRITE belong to M7. What M6
+needs to prove is three things: retrieved results actually reach the prompt, documents
+are marked as untrusted data, and ChatTurn carries enough evidence for M7 to use.
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ PROFILES = Path(__file__).resolve().parents[1] / "profiles"
 
 
 class SpyCompletion:
-    """记录它被怎么调用的，本身返回固定文本。"""
+    """Records how it was called; itself returns fixed text."""
 
     def __init__(self) -> None:
         self.system: str = ""
@@ -62,10 +63,12 @@ async def test_retrieved_chunks_reach_the_prompt(bot):
 
 
 async def test_documents_are_marked_as_untrusted_data(bot):
-    """注入守卫的文档通道将来挂在这里 —— 分隔符现在就得留对。
+    """The injection guard's document channel will hang off here in the future -- the
+    delimiter has to be right now.
 
-    闭合标记带着本轮 nonce（Finding 1），所以这里连带校验渲染出来的
-    nonce 确实出现在闭合标记里，而不只是随便找一个 "</document"。
+    The closing marker carries this turn's nonce (Finding 1), so this also verifies
+    that the rendered nonce actually appears in the closing marker, rather than just
+    finding any "</document" at all.
     """
     spy, kb, profile = bot
     chatbot = Chatbot(kb.for_locale(Locale.DE_DE), spy, profile)
@@ -78,7 +81,7 @@ async def test_documents_are_marked_as_untrusted_data(bot):
 
 
 async def test_system_prompt_requests_the_persona(bot):
-    """提示词请求，守卫核验 —— 这是两件事。"""
+    """The prompt requests it; a guard verifies it -- these are two different things."""
     spy, kb, profile = bot
     chatbot = Chatbot(kb.for_locale(Locale.DE_DE), spy, profile)
     await chatbot.reply("Hallo", ())
@@ -86,7 +89,8 @@ async def test_system_prompt_requests_the_persona(bot):
 
 
 async def test_system_prompt_uses_brand_name_not_the_identifier(bot):
-    """回归测试：提示词曾经泄露 profile.name（如 'telco_de'），而不是品牌名。"""
+    """Regression test: the prompt used to leak profile.name (e.g. 'telco_de')
+    instead of the brand name."""
     spy, kb, profile = bot
     chatbot = Chatbot(kb.for_locale(Locale.DE_DE), spy, profile)
     await chatbot.reply("Wer sind Sie?", ())
@@ -95,11 +99,13 @@ async def test_system_prompt_uses_brand_name_not_the_identifier(bot):
 
 
 async def test_history_is_truncated_to_its_own_window(bot):
-    """HISTORY_TURNS 不复用 profile 的 cross_turn_window（默认 5）。
+    """HISTORY_TURNS does not reuse the profile's cross_turn_window (default 5).
 
-    20 轮历史全部同 role、内容各异（"Frage 0".."Frage 19"）。只断言长度
-    的话，保留最旧 N 轮或任意 N 轮都能通过 —— 必须同时校验保留的是
-    *最近* HISTORY_TURNS 轮，且顺序不变，才能抓住"读反了"的回归。
+    All 20 turns of history share the same role, with distinct content
+    ("Frage 0".."Frage 19"). Asserting length alone would pass whether the oldest N
+    turns or any arbitrary N turns were kept -- only checking that the *most recent*
+    HISTORY_TURNS turns are kept, in unchanged order, catches a "read it backwards"
+    regression.
     """
     spy, kb, profile = bot
     chatbot = Chatbot(kb.for_locale(Locale.DE_DE), spy, profile)
@@ -125,10 +131,11 @@ async def test_chat_turn_carries_the_evidence_m7_needs(bot):
 
 
 async def test_prompt_hash_differs_across_turns_because_of_the_nonce(bot):
-    """自 Finding 1 起 prompt_hash 不再对相同输入稳定 —— 每轮都嵌入一个新
-    nonce（见 ``ChatTurn`` 和 ``Chatbot._render_user_turn`` 的 docstring），
-    prompt 字符串确实变了。不要为了让这个测试"看起来稳定"就把 nonce 从
-    哈希输入里排除掉，那样会把 Finding 1 的修复悄悄退化掉。
+    """Since Finding 1, prompt_hash is no longer stable across identical input --
+    every turn embeds a fresh nonce (see the docstrings of ``ChatTurn`` and
+    ``Chatbot._render_user_turn``), so the prompt string genuinely changes. Do not
+    exclude the nonce from the hash input just to make this test "look stable" --
+    that would silently regress the Finding 1 fix.
     """
     spy, kb, profile = bot
     chatbot = Chatbot(kb.for_locale(Locale.DE_DE), spy, profile)
@@ -159,8 +166,9 @@ async def test_system_prompt_names_the_same_nonce_as_the_user_turn(bot):
 
 
 async def test_document_text_containing_closing_tag_cannot_escape_the_region(bot):
-    """一个 chunk 文本里写了字面 ``</document>``，不能借此提前闭合不可信
-    区块 —— 只有带着本轮 nonce 的 ``</document nonce="...">`` 才能闭合。
+    """A chunk whose text contains a literal ``</document>`` must not be able to
+    close the untrusted region early -- only ``</document nonce="...">`` carrying
+    this turn's nonce can close it.
     """
     spy, kb, profile = bot
     trailer = (
@@ -187,7 +195,8 @@ async def test_document_text_containing_closing_tag_cannot_escape_the_region(bot
     nonce = _NONCE_RE.search(rendered).group(1)
     closer = f'</document nonce="{nonce}">'
     assert closer in rendered
-    # 注入的尾巴仍然在 nonce 分隔的区块*内部*：它出现在真正的闭合标记之前。
+    # The injected trailer still sits *inside* the nonce-delimited region: it appears
+    # before the real closing marker.
     assert rendered.index(trailer) < rendered.index(closer)
 
 
