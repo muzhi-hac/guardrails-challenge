@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Protocol
 
-from rank_bm25 import BM25Plus
+from rank_bm25 import BM25Okapi
 
 from guardrails.locale.base import LocaleRules
 from guardrails.retrieval.chunks import Chunk, Scored
@@ -38,15 +38,16 @@ class Bm25Retriever:
         self._chunks: tuple[Chunk, ...] = tuple(chunks)
         self._rules = rules
         corpus = [list(rules.tokenize(chunk.text)) for chunk in self._chunks]
-        # BM25Plus, not BM25Okapi: Okapi's classic idf floor gives a term that
-        # appears in exactly half of a small corpus an idf of exactly 0 (or a
-        # symmetric negative value when it appears in every document), which
-        # zeroes out its contribution entirely. On corpora the size of a single
-        # locale's KB (tens of chunks) — and especially in tests with a
-        # handful of documents — that erases the exact-term signal §3.8 exists
-        # to preserve. BM25Plus's additive delta keeps a document that actually
-        # contains the term ranked above one that does not, at any corpus size.
-        self._index = BM25Plus(corpus) if corpus else None
+        # BM25Okapi's classic idf floor gives a term that appears in exactly
+        # half of a *very small* corpus (or in every document) an idf of zero
+        # or below, which zeroes out its contribution. That is a degenerate
+        # property of tiny toy corpora, not of this KB: across the real
+        # locale corpora (tens of chunks each), df=1 terms land at a healthy
+        # positive idf, and BM25Okapi is the specified, standard scorer.
+        # Tests that need a term isolated to one document build a corpus
+        # large enough (>=5 chunks) that idf stays positive — see
+        # tests/test_retrieval.py.
+        self._index = BM25Okapi(corpus) if corpus else None
 
     def search(self, query: str, *, k: int) -> tuple[Scored[Chunk], ...]:
         tokens = list(self._rules.tokenize(query))
