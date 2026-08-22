@@ -53,6 +53,10 @@ def test_recall_report(kb, capsys):
     for label, cases in rows:
         row = " ".join(f"@{k}={recall_at_k(kb, cases, k):.2f}" for k in (1, 3, 5))
         lines.append(f"  {label} (n={len(tuple(cases))}): {row}")
+    lines.append("  逐条（局限用例）：")
+    for case in limitation:
+        row = " ".join(f"@{k}={recall_at_k(kb, [case], k):.2f}" for k in (1, 3, 5))
+        lines.append(f"    [{case.known_limitation}] {case.query}: {row}")
     with capsys.disabled():
         print("\n".join(lines))
 
