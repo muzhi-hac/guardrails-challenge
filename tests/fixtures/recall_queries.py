@@ -8,6 +8,16 @@
 
 **改写型提问是刻意放进来的**：那正是纯词汇检索的已知弱点。测出来记为局限，比回避
 它更有用。
+
+**派生形态是第二类已知局限，边界不同于改写。** 德语分词器对屈折变化做词典校验的
+还原（如名词的格/数后缀），但不做派生形态还原：动词分词（``gedrosselt``）永远到
+不了对应的名词（``Drosselung``），因为词干化只剥离已登记的名词屈折后缀，再拿结
+果去词典核对——``gedrosselt`` 本身不是词典条目，也没有剥离动词 "ge-" 前缀的机制。
+"Ab wann wird gedrosselt?" 和 "Wann beginnt die Drosselung meines Datenvolumens?"
+是同一个客户意图的两种问法，前者是真实、自然的德语提问，只是恰好踩在这条派生形
+态的边界上。两种问法都留在集合里，是故意的：只留下能命中的那个问法，测不出边界
+在哪里；两个都留，边界就写在数字里——精确词 @5 因为改写版本命中而保持高分，
+局限组按类型细分后能看到派生形态的命中率明显低于改写，数字本身就是文档。
 """
 
 from __future__ import annotations
@@ -21,8 +31,10 @@ class RecallCase(NamedTuple):
     query: str
     expected_doc_ids: frozenset[str]
     locale: Locale
-    paraphrase: bool = False
-    """True 表示这条不含语料里的关键词，测的是词汇检索的弱点边界。"""
+    known_limitation: str = ""
+    """空字符串表示这条属于精确词用例。非空时说明是哪一类已知局限：
+    ``paraphrase``（查询与文档零词汇重叠）或 ``derivation``（派生形态：
+    动词分词到名词，如 gedrosselt -> Drosselung）。"""
 
 
 DE = Locale.DE_DE
@@ -45,13 +57,19 @@ RECALL_QUERIES: tuple[RecallCase, ...] = (
     RecallCase("Wann erreiche ich den Kundenservice?", frozenset({"servicezeiten"}), DE),
     # --- 德语：ASCII 变音符输入（真实用户行为）---
     RecallCase("Kuendigung Frist", frozenset({"vertragslaufzeit-kuendigung"}), DE),
-    # --- 德语：改写型（已知弱点）---
+    # --- 德语：改写型（已知弱点：paraphrase，查询与文档零词汇重叠）---
     RecallCase("Wie komme ich aus meinem Vertrag heraus?",
-               frozenset({"vertragslaufzeit-kuendigung"}), DE, paraphrase=True),
+               frozenset({"vertragslaufzeit-kuendigung"}), DE,
+               known_limitation="paraphrase"),
     RecallCase("Ich ziehe um, was passiert mit meinem Anschluss?",
-               frozenset({"umzug"}), DE, paraphrase=True),
+               frozenset({"umzug"}), DE, known_limitation="paraphrase"),
     RecallCase("Mein Internet ist seit gestern weg",
-               frozenset({"stoerung-entstoerfrist"}), DE, paraphrase=True),
+               frozenset({"stoerung-entstoerfrist"}), DE,
+               known_limitation="paraphrase"),
+    # --- 德语：派生形态型（已知弱点：derivation，动词分词到不了对应名词）---
+    RecallCase("Ab wann wird gedrosselt?",
+               frozenset({"datenvolumen-drosselung"}), DE,
+               known_limitation="derivation"),
     # --- 英语 ---
     RecallCase("How much does Tariff M cost?", frozenset({"tarife-mobilfunk"}), EN),
     RecallCase("notice period for cancellation",
@@ -59,5 +77,6 @@ RECALL_QUERIES: tuple[RecallCase, ...] = (
     RecallCase("roaming outside the EU", frozenset({"roaming-eu"}), EN),
     RecallCase("when is my invoice issued", frozenset({"rechnung-zahlungsarten"}), EN),
     RecallCase("how long to fix a fault", frozenset({"stoerung-entstoerfrist"}), EN),
-    RecallCase("I am moving house", frozenset({"umzug"}), EN, paraphrase=True),
+    RecallCase("I am moving house", frozenset({"umzug"}), EN,
+               known_limitation="paraphrase"),
 )

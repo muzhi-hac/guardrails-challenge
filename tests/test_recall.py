@@ -34,18 +34,23 @@ def recall_at_k(kb: KnowledgeBase, cases, k: int) -> float:
 
 @pytest.mark.parametrize("case", RECALL_QUERIES, ids=lambda c: c.query[:32])
 def test_exact_term_queries_hit_at_5(kb, case):
-    """非改写型查询必须在 k=5 内命中。改写型不设门槛，只报告数字。"""
-    if case.paraphrase:
-        pytest.skip("改写型查询是已知弱点，数字由 test_recall_report 记录")
+    """非局限型查询必须在 k=5 内命中。已知局限不设门槛，只报告数字。"""
+    if case.known_limitation:
+        pytest.skip("已知局限型查询，数字由 test_recall_report 记录")
     assert hits(kb, case, 5), f"未命中: {case.query}"
 
 
 def test_recall_report(kb, capsys):
     """打印 recall@1/@3/@5，供 §5 数字表抄录。断言只设下限，避免脆弱。"""
-    exact = [c for c in RECALL_QUERIES if not c.paraphrase]
-    para = [c for c in RECALL_QUERIES if c.paraphrase]
+    exact = [c for c in RECALL_QUERIES if not c.known_limitation]
+    limitation = [c for c in RECALL_QUERIES if c.known_limitation]
+    kinds = sorted({c.known_limitation for c in limitation})
     lines = ["", "检索 recall（分母见括号）"]
-    for label, cases in (("精确词", exact), ("改写型", para), ("全部", RECALL_QUERIES)):
+    rows = [("精确词", exact)]
+    rows += [(f"局限-{kind}", [c for c in limitation if c.known_limitation == kind])
+             for kind in kinds]
+    rows += [("全部", RECALL_QUERIES)]
+    for label, cases in rows:
         row = " ".join(f"@{k}={recall_at_k(kb, cases, k):.2f}" for k in (1, 3, 5))
         lines.append(f"  {label} (n={len(tuple(cases))}): {row}")
     with capsys.disabled():
