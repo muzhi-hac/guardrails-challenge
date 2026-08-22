@@ -26,6 +26,7 @@ from guardrails.locale.base import (
     Sentence,
     count_words,
     format_decimal,
+    simple_tokenize,
 )
 from guardrails.types import AddressForm, EntityKind, Locale
 
@@ -244,6 +245,10 @@ class GermanRules:
                 claim(EntityMention(EntityKind.NUMBER, m.group(), format_decimal(amount), m.span()))
 
         return tuple(sorted((f for f in found if f.kind in kinds), key=lambda e: e.span))
+
+    def tokenize(self, text: str) -> tuple[str, ...]:
+        """暂用平凡分词；Task 3 换成含复合词分解的六步流水线。"""
+        return simple_tokenize(text)
 
 
 def _duration_unit(word: str) -> str | None:

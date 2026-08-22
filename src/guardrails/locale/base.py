@@ -35,6 +35,9 @@ __all__ = [
     "Sentence",
     "count_words",
     "format_decimal",
+    "surface_tokens",
+    "split_hyphenated",
+    "simple_tokenize",
 ]
 
 
@@ -110,6 +113,16 @@ class LocaleRules(Protocol):
         """Extract and normalise quantities, without overlaps, ordered by span."""
         ...
 
+    def tokenize(self, text: str) -> tuple[str, ...]:
+        """检索用词元。
+
+        与 :meth:`extract_entities` 不同，这里的产出是给 BM25 索引用的，允许一个
+        表面词展开出多个词元（德语的复合词成分与变音符别名）。展开一律**叠加**，
+        原词永远保留 —— 精确词匹配是这个检索器的主要能力，任何把原词换掉的规范化
+        都会削弱它。
+        """
+        ...
+
 
 _WORD = re.compile(r"[^\W_]+(?:[-'’][^\W_]+)*", re.UNICODE)
 
@@ -130,3 +143,37 @@ def format_decimal(value: Decimal) -> str:
     if value == value.to_integral_value():
         return str(value.quantize(Decimal(1)))
     return format(value.normalize(), "f")
+
+
+_TOKEN_RE = re.compile(r"[0-9]+(?:[.,][0-9]+)*|[^\W\d_]+(?:-[^\W\d_]+)*", re.UNICODE)
+
+
+def surface_tokens(text: str) -> tuple[str, ...]:
+    """按语言无关的规则切出表面词元。
+
+    数字保持完整（``29,99`` 与 ``29.99`` 都是一个词元），带连字符的词先整体切出，
+    连字符成分的展开由各语言的 ``tokenize`` 决定。
+    """
+    return tuple(m.group(0) for m in _TOKEN_RE.finditer(text))
+
+
+def split_hyphenated(token: str) -> tuple[str, ...]:
+    """``eu-roaming`` -> ``(eu-roaming, eu, roaming)``；无连字符时原样返回。"""
+    if "-" not in token:
+        return (token,)
+    return (token, *(part for part in token.split("-") if part))
+
+
+def simple_tokenize(text: str) -> tuple[str, ...]:
+    """没有形态学的语言够用的分词：切词、casefold、拆连字符。
+
+    英语的最终实现就是这一份。德语在此之上再叠复合词分解与别名闭包，所以德语**不**
+    调用它 —— 见 ``locale/de.py``。
+
+    ``dict.fromkeys`` 是**每个原始词元内部**去重：一个表面词展开出的多个变体各计一次，
+    但文档里真实重复出现的词仍然重复计入，BM25 的 TF 因此保持可解释。
+    """
+    out: list[str] = []
+    for token in surface_tokens(text):
+        out.extend(dict.fromkeys(split_hyphenated(token.casefold())))
+    return tuple(out)

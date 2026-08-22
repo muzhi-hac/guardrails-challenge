@@ -24,6 +24,7 @@ from guardrails.locale.base import (
     Sentence,
     count_words,
     format_decimal,
+    simple_tokenize,
 )
 from guardrails.types import AddressForm, EntityKind, Locale
 
@@ -194,6 +195,10 @@ class EnglishRules:
                 claim(EntityMention(EntityKind.NUMBER, m.group(), format_decimal(amount), m.span()))
 
         return tuple(sorted((f for f in found if f.kind in kinds), key=lambda e: e.span))
+
+    def tokenize(self, text: str) -> tuple[str, ...]:
+        """英语没有德语那种复合词，平凡分词就是最终实现。"""
+        return simple_tokenize(text)
 
 
 def _duration_unit(word: str) -> str | None:
