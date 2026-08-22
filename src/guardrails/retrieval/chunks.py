@@ -44,6 +44,17 @@ class Scored(NamedTuple, Generic[T]):
     score: float
 
 
+class _Atom(NamedTuple):
+    """一个不可再分的原子，带上它的种类。
+
+    ``_atoms`` 判断出一个块是「按行」（表格行、列表项）还是「按段」（散文）之后，
+    这个种类必须活着传到 ``_pack``，否则拼接时就不知道该用 ``"\\n"`` 还是
+    ``"\\n\\n"`` —— 用错了空行会把跨块的表格拆散，见 Defect 3。
+    """
+    text: str
+    kind: str  # "line" | "block"
+
+
 def slugify(text: str) -> str:
     """``Tarifübersicht`` -> ``tarifuebersicht``。
 
@@ -56,27 +67,38 @@ def slugify(text: str) -> str:
     return re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", ascii_only)).strip("-")
 
 
-def _atoms(body: str) -> list[str]:
+def _atoms(body: str) -> list[_Atom]:
     """段落、列表项、表格行 —— 二次切分不得穿过这些单位。
 
-    一个表格行天然是「资费名 + 价格」的最小完整单位。
+    一个表格行天然是「资费名 + 价格」的最小完整单位。每个原子带上它的种类
+    （``line`` 还是 ``block``），供 ``_pack`` 决定用什么分隔符重新拼接。
     """
-    atoms: list[str] = []
+    atoms: list[_Atom] = []
     for block in re.split(r"\n\s*\n", body.strip()):
         lines = block.splitlines()
         if all(line.lstrip().startswith(("|", "-", "*")) for line in lines if line.strip()):
-            atoms.extend(line for line in lines if line.strip())
+            atoms.extend(_Atom(line, "line") for line in lines if line.strip())
         else:
-            atoms.append(block.strip())
-    return [a for a in atoms if a]
+            stripped = block.strip()
+            if stripped:
+                atoms.append(_Atom(stripped, "block"))
+    return atoms
 
 
 def chunk_document(doc: Document, *, max_words: int = 180) -> tuple[Chunk, ...]:
     sections = _sections(doc.body)
+    seen: dict[str, int] = {}
     chunks: list[Chunk] = []
-    for section_title, section_body in sections:
-        heading = f"## {section_title}"
-        base_id = f"{doc.locale.value}:{doc.doc_id}#{slugify(section_title)}"
+    for n, (section_title, section_body) in enumerate(sections):
+        # 空标题（首标题前的正文，见 _sections）落到位置化的 abschnitt-{n}；
+        # 同一文档内重复出现的 slug（不管是不是靠 fallback 得来的）从第二次起
+        # 追加 -2、-3……第一次出现保持不加后缀，语料里现有的 chunk_id 因此不变。
+        slug = slugify(section_title) or f"abschnitt-{n}"
+        seen[slug] = seen.get(slug, 0) + 1
+        if seen[slug] > 1:
+            slug = f"{slug}-{seen[slug]}"
+        base_id = f"{doc.locale.value}:{doc.doc_id}#{slug}"
+        heading = f"## {section_title}" if section_title else ""
         whole = f"{heading}\n\n{section_body}".strip()
         if count_words(whole) <= max_words:
             chunks.append(_make(doc, base_id, section_title, whole))
@@ -91,27 +113,54 @@ def _sections(body: str) -> list[tuple[str, str]]:
     if not matches:
         return [("", body.strip())]
     out: list[tuple[str, str]] = []
+    # 第一个 ``##`` 之前的正文不是「文档的一部分标题」的续篇，而是自己的一段
+    # 内容——corpus 目前的约定是 body 总以标题开头，但那只是约定，不是契约
+    # （见 documents.py），丢掉它就是 Defect 2。给它一个空标题的「小节」，
+    # 空标题在 chunk_document 里落到 abschnitt-0。
+    lead = body[:matches[0].start()].strip()
+    if lead:
+        out.append(("", lead))
     for i, match in enumerate(matches):
         end = matches[i + 1].start() if i + 1 < len(matches) else len(body)
         out.append((match.group("title"), body[match.end():end].strip()))
     return out
 
 
-def _pack(atoms: list[str], max_words: int, heading: str) -> list[str]:
+def _join(atoms: list[_Atom]) -> str:
+    """按种类拼回文本：连续的 ``line`` 原子之间只用单换行，其余（``block`` 原子，
+    以及 block 和 line 的交界处）用空行分隔。
+
+    表格行是 ``line`` 原子（见 ``_atoms``）；一旦在两行表格行之间插入空行，
+    GFM 就不再把它们渲成同一张表 —— 这正是 Defect 3。
+    """
+    pieces: list[str] = []
+    for i, atom in enumerate(atoms):
+        if i == 0:
+            pieces.append(atom.text)
+            continue
+        sep = "\n" if atom.kind == "line" and atoms[i - 1].kind == "line" else "\n\n"
+        pieces.append(sep)
+        pieces.append(atom.text)
+    return "".join(pieces)
+
+
+def _pack(atoms: list[_Atom], max_words: int, heading: str) -> list[str]:
     """把原子装进不超过 ``max_words`` 的片，每片都带上小节标题前缀。
 
     标题前缀让片段自身可读，也让 BM25 仍能通过标题词命中这一片。
     """
     parts: list[str] = []
-    current: list[str] = []
+    current: list[_Atom] = []
+    # 标题很长时 budget 可能非正；spec 要求原子（段落/表格行）永不被切分，
+    # 所以第一个原子总是无条件接受 —— 这里宁可让单个片超预算，也不违反原子性。
     budget = max_words - count_words(heading)
     for atom in atoms:
-        if current and count_words(" ".join(current)) + count_words(atom) > budget:
-            parts.append(f"{heading}\n\n" + "\n\n".join(current))
+        if current and count_words(_join(current)) + count_words(atom.text) > budget:
+            parts.append(f"{heading}\n\n{_join(current)}".strip())
             current = []
         current.append(atom)
     if current:
-        parts.append(f"{heading}\n\n" + "\n\n".join(current))
+        parts.append(f"{heading}\n\n{_join(current)}".strip())
     return parts
 
 

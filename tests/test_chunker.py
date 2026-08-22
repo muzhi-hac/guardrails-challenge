@@ -7,10 +7,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from guardrails.retrieval.chunks import chunk_document
-from guardrails.retrieval.documents import Document
+from guardrails.retrieval.documents import Document, load_documents
 from guardrails.types import Locale
 
 BODY = """## Tarifübersicht
@@ -95,7 +97,86 @@ def test_table_rows_are_atomic():
         source_path="kb/de/tab.md",
         body=f"## Tabelle\n\n| Tarif | Preis |\n|---|---|\n{rows}",
     )
-    for chunk in chunk_document(doc, max_words=180):
-        for line in chunk.text.splitlines():
+    chunks = chunk_document(doc, max_words=180)
+    assert len(chunks) > 1, "夹具应当强制二次切分，否则这条测试测不到任何东西"
+    for chunk in chunks:
+        lines = chunk.text.splitlines()
+        for line in lines:
             if line.startswith("|"):
                 assert line.endswith("|"), "表格行被切断"
+        # 强化版：连续的表格行之间不能夹着空行——一旦夹了，GFM 就不再把它们
+        # 渲染成同一张表。用「line.startswith('|') 且 line.endswith('|')」的
+        # 弱断言即使空行被插入表格行之间也会通过，测不出 Defect 3。
+        table_line_indexes = [i for i, line in enumerate(lines) if line.startswith("|")]
+        for a, b in zip(table_line_indexes, table_line_indexes[1:]):
+            if b == a + 1:
+                continue
+            between = lines[a + 1:b]
+            assert any(line.strip() for line in between), (
+                "两条相邻表格行之间出现了空行，表格被拆散"
+            )
+
+
+def test_duplicate_section_titles_get_distinct_chunk_ids():
+    body = "## Hinweise\n\nText A kurz.\n\n## Hinweise\n\nText B kurz."
+    doc = Document(
+        doc_id="dup", locale=Locale.DE_DE, title="Dup", version="2026-01-01",
+        source_path="kb/de/dup.md", body=body,
+    )
+    ids = [c.chunk_id for c in chunk_document(doc)]
+    assert len(ids) == len(set(ids))
+    assert ids[0] == "de-DE:dup#hinweise"
+    assert ids[1] == "de-DE:dup#hinweise-2"
+
+
+def test_headings_differing_only_in_punctuation_get_distinct_chunk_ids():
+    body = "## Preise & Tarife\n\nText A kurz.\n\n## Preise - Tarife\n\nText B kurz."
+    doc = Document(
+        doc_id="punct", locale=Locale.DE_DE, title="Punct", version="2026-01-01",
+        source_path="kb/de/punct.md", body=body,
+    )
+    ids = [c.chunk_id for c in chunk_document(doc)]
+    assert len(ids) == len(set(ids))
+
+
+def test_non_latin_heading_gets_nonempty_slug_and_no_trailing_hash():
+    body = "## 你好\n\nEin kurzer Text."
+    doc = Document(
+        doc_id="cjk", locale=Locale.DE_DE, title="CJK", version="2026-01-01",
+        source_path="kb/de/cjk.md", body=body,
+    )
+    (chunk,) = chunk_document(doc)
+    assert not chunk.chunk_id.endswith("#")
+    slug = chunk.chunk_id.rsplit("#", 1)[1]
+    assert slug != ""
+
+
+def test_text_before_first_heading_is_kept():
+    body = "Einleitender Text ohne Ueberschrift, der lang genug ist.\n\n## Abschnitt\n\nKoerper."
+    doc = Document(
+        doc_id="lead", locale=Locale.DE_DE, title="Lead", version="2026-01-01",
+        source_path="kb/de/lead.md", body=body,
+    )
+    chunks = chunk_document(doc)
+    assert any("Einleitender Text" in c.text for c in chunks)
+    (lead_chunk,) = [c for c in chunks if "Einleitender Text" in c.text]
+    assert not lead_chunk.text.startswith("## ")
+    assert lead_chunk.chunk_id == "de-DE:lead#abschnitt-0"
+
+
+def test_real_corpus_chunk_ids_are_unchanged():
+    """回归锚点：这次修复不应该改变真实语料上任何现有 chunk_id。"""
+    docs = load_documents(Path("kb"))
+    doc = next(d for d in docs if d.doc_id == "tarife-mobilfunk" and d.locale is Locale.DE_DE)
+    ids = [c.chunk_id for c in chunk_document(doc)]
+    assert ids == [
+        "de-DE:tarife-mobilfunk#tarifuebersicht",
+        "de-DE:tarife-mobilfunk#tarifwechsel",
+    ]
+    tk = next(d for d in docs if d.doc_id == "vertragslaufzeit-kuendigung" and d.locale is Locale.DE_DE)
+    tk_ids = [c.chunk_id for c in chunk_document(tk)]
+    assert tk_ids == [
+        "de-DE:vertragslaufzeit-kuendigung#gesetzliche-vorgaben-zur-kuendigungsfrist",
+        "de-DE:vertragslaufzeit-kuendigung#unsere-vertragsbedingungen",
+        "de-DE:vertragslaufzeit-kuendigung#kuendigungswege",
+    ]
