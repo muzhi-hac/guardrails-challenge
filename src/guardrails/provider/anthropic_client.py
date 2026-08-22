@@ -19,6 +19,10 @@ M7 judge 设计的前提）：
   因此本项目不依赖该字段强制控制 judge effort。
 - json-schema output format 在该测试范围内未强制返回符合 schema 的结果，而是返回
   普通文本。因此后续的 judge 模块改用强制 tool choice —— 同日、同范围内验证过可用。
+- 携带 ``max_tokens=32`` 的请求返回了约 700 字符的文本，``stop_reason`` 为
+  ``"end_turn"``——该中转端点没有在 32 个 token 处截断。因此「思考耗尽预算、正文
+  为空」这条路径无法在该端点上用实时调用复现验证；它靠构造（``stop_reason`` 字段
+  必填、见下方 ``complete`` 里对 ``None`` 的处理）和单元测试兜底。
 """
 
 from __future__ import annotations
@@ -63,10 +67,19 @@ class AnthropicCompletion:
             block.text for block in response.content if block.type == "text"
         )
 
+        # SDK 类型是 ``stop_reason: StopReason | None`` —— 按文档它只在流式响应的
+        # 中间事件里为 ``None``，一个已完成的 ``Message`` 理论上总有值。但
+        # ``CompletionResult.stop_reason`` 是必填 ``str``（理由见 base.py），
+        # 而这里没有立场把"SDK 违反了自己的文档承诺"升级成异常——那是策略判断，
+        # 不是这一层该做的事。所以退化成一个明确写出"未知"的哨兵字符串，而不是让
+        # ``None`` 悄悄混进一个类型上承诺是 ``str`` 的字段。
+        stop_reason = response.stop_reason if response.stop_reason is not None else "unknown"
+
         return CompletionResult(
             text=text,
             model=response.model,
             input_tokens=response.usage.input_tokens,
             output_tokens=response.usage.output_tokens,
             latency_ms=latency_ms,
+            stop_reason=stop_reason,
         )

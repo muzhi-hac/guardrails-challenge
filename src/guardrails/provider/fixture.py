@@ -23,10 +23,12 @@ from guardrails.provider.base import CompletionResult, Turn
 
 __all__ = ["FixtureCompletion", "SCHEMA_VERSION", "fixture_key"]
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 """fixture 格式版本。改格式时递增，旧记录因此显式失效而不是静默错配。"""
 
-_REQUIRED_FIELDS = ("text", "model", "input_tokens", "output_tokens", "latency_ms")
+_REQUIRED_FIELDS = (
+    "text", "model", "input_tokens", "output_tokens", "latency_ms", "stop_reason",
+)
 
 
 def fixture_key(
@@ -104,6 +106,12 @@ class FixtureCompletion:
                 f"malformed fixture record for key {key} in {self._path}: "
                 f"field 'latency_ms' must be a number, got {latency_ms!r}"
             )
+        stop_reason = record["stop_reason"]
+        if not isinstance(stop_reason, str):
+            raise ValueError(
+                f"malformed fixture record for key {key} in {self._path}: "
+                f"field 'stop_reason' must be a string, got {stop_reason!r}"
+            )
 
         return CompletionResult(
             text=text,
@@ -111,4 +119,5 @@ class FixtureCompletion:
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             latency_ms=float(latency_ms),
+            stop_reason=stop_reason,
         )

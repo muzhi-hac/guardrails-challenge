@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from guardrails.provider.base import Turn
+from guardrails.provider.base import CompletionResult, Turn
 from guardrails.provider.fixture import FixtureCompletion, fixture_key
 
 MESSAGES = (Turn(role="user", content="Was kostet Tarif M?"),)
@@ -60,7 +60,7 @@ async def test_replays_recorded_response(tmp_path: Path):
     store.write_text(json.dumps({
         key: {"text": "Tarif M kostet 29,99 EUR pro Monat.",
               "model": "m", "input_tokens": 42, "output_tokens": 13,
-              "latency_ms": 842.7}
+              "latency_ms": 842.7, "stop_reason": "end_turn"}
     }), encoding="utf-8")
 
     provider = FixtureCompletion(store, model="m")
@@ -70,6 +70,7 @@ async def test_replays_recorded_response(tmp_path: Path):
     assert result.input_tokens == 42
     assert result.output_tokens == 13
     assert result.latency_ms == 842.7
+    assert result.stop_reason == "end_turn"
 
 
 async def test_miss_raises_rather_than_falling_back(tmp_path: Path):
@@ -87,7 +88,7 @@ async def test_different_max_tokens_does_not_hit_the_same_recording(tmp_path: Pa
     store = tmp_path / "completions.json"
     store.write_text(json.dumps({key: {"text": "x", "model": "m",
                                        "input_tokens": 1, "output_tokens": 1,
-                                       "latency_ms": 1.0}}),
+                                       "latency_ms": 1.0, "stop_reason": "end_turn"}}),
                      encoding="utf-8")
     provider = FixtureCompletion(store, model="m")
     with pytest.raises(KeyError):
@@ -118,7 +119,7 @@ async def test_non_integer_token_count_is_rejected_not_coerced(tmp_path: Path):
     store = tmp_path / "completions.json"
     store.write_text(json.dumps({
         key: {"text": "x", "model": "m", "input_tokens": "42",
-              "output_tokens": 1, "latency_ms": 1.0}
+              "output_tokens": 1, "latency_ms": 1.0, "stop_reason": "end_turn"}
     }), encoding="utf-8")
 
     provider = FixtureCompletion(store, model="m")
@@ -129,3 +130,41 @@ async def test_non_integer_token_count_is_rejected_not_coerced(tmp_path: Path):
     assert str(store) in message
     assert key in message
     assert "input_tokens" in message
+
+
+async def test_missing_stop_reason_raises_naming_file_key_and_field(tmp_path: Path):
+    """`stop_reason` 是新加的必填字段——缺它必须和缺其他字段一样，报错能定位问题。"""
+    key = fixture_key(system=SYSTEM, messages=MESSAGES, max_tokens=512, model="m")
+    store = tmp_path / "completions.json"
+    store.write_text(json.dumps({
+        key: {"text": "x", "model": "m", "input_tokens": 1,
+              "output_tokens": 1, "latency_ms": 1.0}
+    }), encoding="utf-8")
+
+    provider = FixtureCompletion(store, model="m")
+    with pytest.raises(ValueError) as excinfo:
+        await provider.complete(system=SYSTEM, messages=MESSAGES, max_tokens=512)
+
+    message = str(excinfo.value)
+    assert str(store) in message
+    assert key in message
+    assert "stop_reason" in message
+
+
+def test_stop_reason_distinguishes_truncated_from_complete_empty_reply():
+    """回归守卫：这就是本次修复要修的那个问题——text 为空时，调用方必须能靠
+    stop_reason 区分「预算耗尽、思考占满了配额」和「模型正常结束、确实无话可说」，
+    而不是把两者都读成"模型什么都没说"。"""
+    truncated = CompletionResult(
+        text="", model="m", input_tokens=10, output_tokens=0,
+        latency_ms=1.0, stop_reason="max_tokens",
+    )
+    complete = CompletionResult(
+        text="", model="m", input_tokens=10, output_tokens=0,
+        latency_ms=1.0, stop_reason="end_turn",
+    )
+
+    assert truncated.text == complete.text == ""
+    assert truncated.stop_reason != complete.stop_reason
+    assert truncated.stop_reason == "max_tokens"
+    assert complete.stop_reason == "end_turn"

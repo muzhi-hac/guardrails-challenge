@@ -32,3 +32,4 @@ async def test_returns_text_and_token_counts(provider):
     assert result.input_tokens > 0
     assert result.output_tokens > 0
     assert result.latency_ms > 0
+    assert isinstance(result.stop_reason, str) and result.stop_reason
