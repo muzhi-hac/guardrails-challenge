@@ -9,10 +9,9 @@ version: 2026-01-01
 
 Last reviewed: 2026-01-01
 
-We issue your bill monthly, on the 3rd working day of the following month —
-that is, 3 working days after the billing period ends. It appears in your
-account under "Bills" the same day, and we will send you an e-mail notification
-as well if you would like one.
+We issue your bill monthly, on the 3rd working day of the following month
+(working day 3). It appears in your account under "Bills" the same day, and we
+will send you an e-mail notification as well if you would like one.
 
 Each billing period covers one full calendar month. The monthly charge is
 billed in advance; usage-based items are billed for the month just ended.

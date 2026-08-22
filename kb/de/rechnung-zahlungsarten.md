@@ -9,10 +9,9 @@ version: 2026-01-01
 
 Stand: 01.01.2026
 
-Wir stellen Ihre Rechnung monatlich am 3. Werktag des Folgemonats aus, also
-3 Werktage nach Ende des Abrechnungszeitraums. Sie finden sie am selben Tag in
-Ihrem Kundenkonto unter „Rechnungen“; auf Wunsch schicken wir Ihnen zusätzlich
-eine Benachrichtigung per E-Mail.
+Wir stellen Ihre Rechnung monatlich am 3. Werktag des Folgemonats aus. Sie
+finden sie am selben Tag in Ihrem Kundenkonto unter „Rechnungen“; auf Wunsch
+schicken wir Ihnen zusätzlich eine Benachrichtigung per E-Mail.
 
 Der Abrechnungszeitraum umfasst jeweils einen vollen Kalendermonat. Die
 Grundgebühr weisen wir im Voraus aus; verbrauchsabhängige Posten rechnen wir
