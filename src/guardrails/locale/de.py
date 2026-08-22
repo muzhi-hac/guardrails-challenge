@@ -26,8 +26,10 @@ from guardrails.locale.base import (
     Sentence,
     count_words,
     format_decimal,
-    simple_tokenize,
+    split_hyphenated,
+    surface_tokens,
 )
+from guardrails.locale.de_lexicon import INFLECTION_SUFFIXES, LEXICON, LINKING_MORPHEMES
 from guardrails.types import AddressForm, EntityKind, Locale
 
 __all__ = ["GermanRules"]
@@ -96,6 +98,68 @@ def _parse_amount(raw: str) -> Decimal | None:
         return Decimal(raw.replace(".", "").replace(",", "."))
     except InvalidOperation:
         return None
+
+
+# --- 检索分词 --------------------------------------------------------------
+
+_UMLAUT_ALIASES: dict[str, str] = {"ä": "ae", "ö": "oe", "ü": "ue"}
+
+
+def _ascii_alias(token: str) -> str | None:
+    """``kündigung`` -> ``kuendigung``；无变音符时返回 ``None``。
+
+    只折叠 ä/ö/ü。不做 ü->u：收益是假想的，代价是把本该区分的词并到一起。
+    ß 不在这里处理 —— ``casefold()`` 已经把它变成 ``ss``。
+    """
+    if not any(ch in token for ch in _UMLAUT_ALIASES):
+        return None
+    out = token
+    for umlaut, replacement in _UMLAUT_ALIASES.items():
+        out = out.replace(umlaut, replacement)
+    return out
+
+
+def _split_compound(token: str) -> tuple[str, ...]:
+    """把复合词拆成词典中的成分；拆不动就返回空元组。
+
+    贪心最长匹配，从左到右。每一步允许吃掉一个连接语素。要求**全部**成分都命中
+    词典 —— 部分匹配（拆出一个词典词加一段残渣）会产生错误召回，比不拆更糟。
+    """
+    parts: list[str] = []
+    rest = token
+    while rest:
+        for end in range(len(rest), 2, -1):
+            head = rest[:end]
+            if head not in LEXICON:
+                continue
+            parts.append(head)
+            tail = rest[end:]
+            for morpheme in LINKING_MORPHEMES:
+                if tail.startswith(morpheme) and tail[len(morpheme):]:
+                    tail = tail[len(morpheme):]
+                    break
+            rest = tail
+            break
+        else:
+            return ()
+    return tuple(parts) if len(parts) > 1 else ()
+
+
+def _stem_alias(token: str) -> str | None:
+    """剥词形后缀，**仅当结果命中词典**时才产出。
+
+    长度规则（"剩余 >= 4 字符就剥"）会造出 ``Nutzer`` -> ``nutz`` 这种假词干。
+    词典验证把「能不能剥」变成一个有据可查的问题。
+    """
+    if token in LEXICON:
+        return None
+    for suffix in INFLECTION_SUFFIXES:
+        if not token.endswith(suffix):
+            continue
+        stem = token[: -len(suffix)]
+        if stem in LEXICON:
+            return stem
+    return None
 
 
 class GermanRules:
@@ -247,8 +311,41 @@ class GermanRules:
         return tuple(sorted((f for f in found if f.kind in kinds), key=lambda e: e.span))
 
     def tokenize(self, text: str) -> tuple[str, ...]:
-        """暂用平凡分词；Task 3 换成含复合词分解的六步流水线。"""
-        return simple_tokenize(text)
+        """六步流水线，全程叠加不替换。见 de_lexicon 的模块文档。"""
+        out: list[str] = []
+        for surface in surface_tokens(text):
+            out.extend(_expand(surface.casefold()))
+        return tuple(out)
+
+
+def _expand(folded: str) -> tuple[str, ...]:
+    """一个已 casefold 的表面词元展开成它的全部检索词元。
+
+    顺序不能重排：成分要先拆完，别名才能施加于**全部**产出（闭包）。只对表面词
+    加别名的话，查询 ``Kuendigung`` 命中不了只写了 ``Kündigungsfrist`` 的文档。
+
+    去重发生在**单个表面词元内部**，所以文档中真实重复的词仍然重复计入 TF。
+    """
+    produced: list[str] = []
+
+    # 3. 连字符成分
+    base = list(split_hyphenated(folded))
+    # 4. 复合词成分
+    for token in tuple(base):
+        base.extend(_split_compound(token))
+    produced.extend(base)
+    # 5. 别名闭包 —— 施加于以上全部产出
+    for token in tuple(produced):
+        alias = _ascii_alias(token)
+        if alias is not None:
+            produced.append(alias)
+    # 6. 词典验证的词干别名
+    for token in tuple(produced):
+        stem = _stem_alias(token)
+        if stem is not None:
+            produced.append(stem)
+
+    return tuple(dict.fromkeys(produced))
 
 
 def _duration_unit(word: str) -> str | None:
