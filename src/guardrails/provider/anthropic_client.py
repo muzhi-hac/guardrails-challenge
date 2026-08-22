@@ -38,13 +38,34 @@ from guardrails.provider.base import CompletionResult, Turn
 __all__ = ["AnthropicCompletion"]
 
 
+def _require_api_key() -> str:
+    """Read ``ANTHROPIC_API_KEY``, failing with guidance instead of a bare
+    ``KeyError``.
+
+    Every other failure path in this codebase names the offending file and
+    what to do about it (``load_profile``, ``documents._parse``,
+    ``FixtureCompletion._parse_record``); a first-time reader running the
+    documented command without a key deserves the same, not a traceback
+    ending in ``KeyError: 'ANTHROPIC_API_KEY'`` with no next step.
+    """
+    try:
+        return os.environ["ANTHROPIC_API_KEY"]
+    except KeyError as exc:
+        raise RuntimeError(
+            "ANTHROPIC_API_KEY is not set. Export it to your Anthropic API "
+            "key before running this command. ANTHROPIC_BASE_URL is "
+            "optional and only needed to route through a non-default "
+            "endpoint."
+        ) from exc
+
+
 class AnthropicCompletion:
     """``Completion`` 协议的真实实现，走 Anthropic Messages API。"""
 
     def __init__(self, model: str, client: AsyncAnthropic | None = None) -> None:
         self._model = model
         self._client = client or AsyncAnthropic(
-            api_key=os.environ["ANTHROPIC_API_KEY"],
+            api_key=_require_api_key(),
             base_url=os.getenv("ANTHROPIC_BASE_URL") or None,
         )
 
