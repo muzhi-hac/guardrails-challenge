@@ -21,7 +21,21 @@ SCHEMA_VERSION = 1
 
 
 def load_profile(path: Path) -> Profile:
-    return Profile.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
+    """读取并校验一份 profile YAML。
+
+    ``read_text`` → ``yaml.safe_load`` → ``Profile.model_validate`` 三步任何一步
+    失败，裸抛出的 ``yaml.YAMLError`` 或 pydantic ``ValidationError`` 都不会带上
+    是哪个文件出的错 —— 排查时只能靠 traceback 猜。这里统一补上路径，和
+    ``guardrails/retrieval/documents.py`` 里 ``_parse`` 对失败做的事一样。
+    ``FileNotFoundError`` 本身已经点名了路径，不需要也不应该再包一层让它变得
+    含糊，所以原样透传。
+    """
+    try:
+        return Profile.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
+    except FileNotFoundError:
+        raise
+    except Exception as exc:
+        raise ValueError(f"{path}: {exc}") from exc
 
 
 def _utc_now() -> str:
@@ -29,6 +43,12 @@ def _utc_now() -> str:
 
 
 def new_run_id() -> str:
+    """生成一次运行的 id：UTC 时间戳 + 随机字节。
+
+    只用时间戳，同一秒内并发跑两次就会撞；只用随机字节，文件按名字排序时就没有
+    时间顺序、翻旧账全靠改文件时间。两者拼在一起：时间戳给人读顺序，随机后缀
+    在同一秒内也不会碰撞。
+    """
     stamp = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
     return f"{stamp}-{secrets.token_hex(3)}"
 
@@ -49,12 +69,33 @@ class TraceWriter:
     def path(self) -> Path:
         return self._path
 
-    def write(self, record: Mapping[str, object]) -> None:
-        payload = {
-            "schema_version": SCHEMA_VERSION,
-            "run_id": self._run_id,
-            "ts": _utc_now(),
-            **record,
-        }
+    def write(self, record: Mapping[str, object], *, error: BaseException | None = None) -> None:
+        """追加一条 JSONL 记录。
+
+        ``record`` 是调用方想记的内容；``schema_version``、``run_id``、``ts`` 是
+        writer 自己的出处字段，调用方即便传了同名 key 也不能覆盖它们 —— 这三个
+        字段存在的意义就是让记录的出处可信：``schema_version`` 让评测脚本能拒绝
+        旧格式而不是误读，``run_id`` 让记录被合并或转存后还能说清来自哪次运行，
+        ``ts`` 让记录本身而不是文件系统时间戳成为时间依据。所以字典字面量里把它们
+        放在 ``**record`` 之后，同名 key 以 writer 为准。
+
+        ``error`` 是可选的异常对象：传了它，writer 自己从 ``type(error).__name__``
+        取出类型名写进 ``error_type``，绝不碰 ``str(error)`` —— 和
+        ``guardrails/pipeline.py`` 里的纪律一致：trace 只记异常类型，不记消息，
+        因为消息可能带着用户输入、prompt 片段或凭证。这里不是靠约定要求调用方
+        自己截断消息，而是让 writer 接管这一步，调用方写 ``{"error_type": str(exc)}``
+        的旁路直接被堵死：``record`` 里也带 ``error_type`` 会被当成冲突拒绝，逼着
+        调用方改成传 ``error=exc``。
+        """
+        if error is not None and "error_type" in record:
+            raise ValueError(
+                "record already has 'error_type'; pass the exception via error= instead"
+            )
+        payload: dict[str, object] = {**record}
+        if error is not None:
+            payload["error_type"] = type(error).__name__
+        payload["schema_version"] = SCHEMA_VERSION
+        payload["run_id"] = self._run_id
+        payload["ts"] = _utc_now()
         with self._path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
