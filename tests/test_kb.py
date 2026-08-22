@@ -104,6 +104,44 @@ def test_mirrored_prices_match_across_locales(documents):
         assert de == en, doc_id
 
 
+def test_mirrored_durations_match_across_locales(documents):
+    """Same rationale as ``test_mirrored_prices_match_across_locales``, extended
+    to DURATION: the 48-hour repair deadline, the 24-month minimum term, the
+    14-day withdrawal window and other duration facts must agree exactly
+    between the German original and its English mirror, not just superficially
+    resemble each other."""
+    def durations(doc):
+        rules = get_rules(doc.locale)
+        return {
+            m.normalized
+            for m in rules.extract_entities(doc.body, (EntityKind.DURATION,))
+        }
+
+    by_key = {(d.locale, d.doc_id): d for d in documents}
+    for doc_id in MIRRORED_DOC_IDS:
+        de = durations(by_key[(Locale.DE_DE, doc_id)])
+        en = durations(by_key[(Locale.EN_GB, doc_id)])
+        assert de == en, doc_id
+
+
+def test_mirrored_numbers_match_across_locales(documents):
+    """Same rationale as ``test_mirrored_prices_match_across_locales``, extended
+    to NUMBER: the 30 GB fair-use limit and other bare-number facts must agree
+    exactly between the German original and its English mirror."""
+    def numbers(doc):
+        rules = get_rules(doc.locale)
+        return {
+            m.normalized
+            for m in rules.extract_entities(doc.body, (EntityKind.NUMBER,))
+        }
+
+    by_key = {(d.locale, d.doc_id): d for d in documents}
+    for doc_id in MIRRORED_DOC_IDS:
+        de = numbers(by_key[(Locale.DE_DE, doc_id)])
+        en = numbers(by_key[(Locale.EN_GB, doc_id)])
+        assert de == en, doc_id
+
+
 def test_price_fact_table_matches_documents(documents):
     """把事实表的具体数值钉死在测试里，而不只是比较德英两侧是否相等。
 
