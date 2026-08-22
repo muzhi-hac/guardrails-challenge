@@ -41,7 +41,7 @@ def test_error_type_only_never_the_message(tmp_path: Path):
     try:
         raise ValueError("streng geheim")
     except ValueError as exc:
-        writer.write({"error_type": type(exc).__name__})
+        writer.write({"query": "x"}, error=exc)
 
     body = (tmp_path / "r2.jsonl").read_text(encoding="utf-8")
     assert "ValueError" in body
@@ -87,12 +87,18 @@ def test_error_kwarg_conflicts_with_explicit_error_type(tmp_path: Path):
         writer.write({"error_type": "ValueError"}, error=ValueError("y"))
 
 
+def test_error_type_in_record_rejected_without_error_kwarg(tmp_path: Path):
+    writer = TraceWriter(tmp_path, run_id="r4b")
+    with pytest.raises(ValueError, match="error_type"):
+        writer.write({"error_type": "ValueError: streng geheimes Passwort 12345"})
+
+
 def test_write_without_error_still_works(tmp_path: Path):
     writer = TraceWriter(tmp_path, run_id="r5")
     writer.write({"query": "kein Fehler"})
 
     record = json.loads((tmp_path / "r5.jsonl").read_text(encoding="utf-8").strip().splitlines()[0])
-    assert "error_type" not in record
+    assert record["error_type"] is None
     assert record["query"] == "kein Fehler"
 
 

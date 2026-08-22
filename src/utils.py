@@ -72,28 +72,29 @@ class TraceWriter:
     def write(self, record: Mapping[str, object], *, error: BaseException | None = None) -> None:
         """追加一条 JSONL 记录。
 
-        ``record`` 是调用方想记的内容；``schema_version``、``run_id``、``ts`` 是
-        writer 自己的出处字段，调用方即便传了同名 key 也不能覆盖它们 —— 这三个
-        字段存在的意义就是让记录的出处可信：``schema_version`` 让评测脚本能拒绝
+        ``record`` 是调用方想记的内容；``schema_version``、``run_id``、``ts``、
+        ``error_type`` 是 writer 自己的出处字段，调用方即便传了同名 key 也不能覆盖它们 ——
+        这些字段存在的意义就是让记录的出处可信：``schema_version`` 让评测脚本能拒绝
         旧格式而不是误读，``run_id`` 让记录被合并或转存后还能说清来自哪次运行，
-        ``ts`` 让记录本身而不是文件系统时间戳成为时间依据。所以字典字面量里把它们
+        ``ts`` 让记录本身而不是文件系统时间戳成为时间依据。``error_type`` 让 writer
+        而不是调用方控制异常信息，从而防止消息中的敏感信息泄露。所以字典字面量里把它们
         放在 ``**record`` 之后，同名 key 以 writer 为准。
 
         ``error`` 是可选的异常对象：传了它，writer 自己从 ``type(error).__name__``
         取出类型名写进 ``error_type``，绝不碰 ``str(error)`` —— 和
         ``guardrails/pipeline.py`` 里的纪律一致：trace 只记异常类型，不记消息，
-        因为消息可能带着用户输入、prompt 片段或凭证。这里不是靠约定要求调用方
-        自己截断消息，而是让 writer 接管这一步，调用方写 ``{"error_type": str(exc)}``
-        的旁路直接被堵死：``record`` 里也带 ``error_type`` 会被当成冲突拒绝，逼着
-        调用方改成传 ``error=exc``。
+        因为消息可能带着用户输入、prompt 片段或凭证。``error_type`` 完全由 writer
+        掌控：调用方即便只传 ``error_type`` key 不传 ``error=``，也会被拒绝。这样可以
+        堵死调用方写成 ``{"error_type": str(exc)}`` 绕过规则的旁路，逼着调用方改成
+        传 ``error=exc``。记录总是包含 ``error_type`` 字段：有异常时是类型名，无异常时
+        是 ``None``，让读者能区分"这一轮没有异常"和"这条记录来自更早的版本"。
         """
-        if error is not None and "error_type" in record:
+        if "error_type" in record:
             raise ValueError(
                 "record already has 'error_type'; pass the exception via error= instead"
             )
         payload: dict[str, object] = {**record}
-        if error is not None:
-            payload["error_type"] = type(error).__name__
+        payload["error_type"] = type(error).__name__ if error is not None else None
         payload["schema_version"] = SCHEMA_VERSION
         payload["run_id"] = self._run_id
         payload["ts"] = _utc_now()
