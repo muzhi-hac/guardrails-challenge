@@ -137,9 +137,10 @@ def _split_compound(token: str) -> tuple[str, ...]:
     return parts if parts is not None and len(parts) > 1 else ()
 
 
-# Memoize _decompose to avoid exponential backtracking as the lexicon grows.
-# The lexicon is immutable, so cache entries never go stale within a process.
-@lru_cache(maxsize=None)
+# 缓存 _decompose 以阻止回溯随词典增长而指数爆炸。有界是因为 tokenize 也在长期
+# 运行的聊天进程中的用户查询上执行，而非仅在索引时的固定语料。无界缓存会随用户
+# 输入无限增长。每个分解的工作集远小于 2048，所以驱逐不会影响指数阻止的效果。
+@lru_cache(maxsize=2048)
 def _decompose(rest: str) -> tuple[str, ...] | None:
     """把 ``rest`` 完整拆成词典成分；拆不完返回 ``None``。
 
