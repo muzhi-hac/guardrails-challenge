@@ -54,7 +54,7 @@ _CASUAL_GREETING_RE = re.compile(r"(?:^|(?<=[.!?]\s))\s*(Hi|Hey|Hiya)\b")
 _FORMAL_GREETING_RE = re.compile(r"\bDear (?:Sir|Madam|Mr|Mrs|Ms|Dr)\b")
 
 _AMOUNT = r"\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?"
-_CURRENCY = r"£|GBP\b"
+_CURRENCY = r"£|GBP\b|€|EUR\b"
 
 _PRICE_RE = re.compile(
     rf"(?:(?P<pre>{_CURRENCY})\s*(?P<a1>{_AMOUNT}))"
@@ -74,6 +74,18 @@ _DURATION_RE = re.compile(
 _NUMBER_RE = re.compile(rf"(?<![\w.,]){_AMOUNT}(?![\w])")
 
 _DURATION_UNITS = {"month": "M", "year": "Y", "day": "D", "week": "W"}
+
+_CURRENCY_CODES: dict[str, str] = {"£": "GBP", "gbp": "GBP", "€": "EUR", "eur": "EUR"}
+
+
+def _currency_code(marker: str) -> str:
+    """把匹配到的货币标记映射成 ISO 代码。
+
+    货币其实是 *region* 形状的知识，不是 *language* 形状的 —— 同一个英语渠道可以卖
+    EUR 也可以卖 GBP。正确归属是 Profile 未来的 ``region`` 字段；在它落地之前，这里
+    至少不能把币种硬编码。
+    """
+    return _CURRENCY_CODES[marker.casefold()]
 
 
 def _parse_amount(raw: str) -> Decimal | None:
@@ -155,11 +167,12 @@ class EnglishRules:
         for m in _PRICE_RE.finditer(text):
             amount = _parse_amount(m.group("a1") or m.group("a2"))
             if amount is not None:
+                marker = m.group("pre") or m.group("post")
                 claim(
                     EntityMention(
                         EntityKind.PRICE,
                         m.group(),
-                        f"{amount.quantize(Decimal('0.01'))} GBP",
+                        f"{amount.quantize(Decimal('0.01'))} {_currency_code(marker)}",
                         m.span(),
                     )
                 )

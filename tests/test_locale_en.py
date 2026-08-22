@@ -167,3 +167,31 @@ class TestCrossLocale:
         de = get_rules(Locale.DE_DE).extract_entities("19,99 €", ALL_KINDS)
         en = get_rules(Locale.EN_GB).extract_entities("£19.99", ALL_KINDS)
         assert de[0].normalized != en[0].normalized
+
+
+# --- 货币：英语渠道卖的是同一份 EUR 资费 -----------------------------------
+
+
+def test_extracts_eur_price_with_symbol():
+    (mention,) = [
+        m for m in RULES.extract_entities("The tariff costs €29.99 per month.", ALL_KINDS)
+        if m.kind is EntityKind.PRICE
+    ]
+    assert mention.normalized == "29.99 EUR"
+
+
+def test_extracts_eur_price_with_code():
+    (mention,) = [
+        m for m in RULES.extract_entities("The tariff costs 29.99 EUR per month.", ALL_KINDS)
+        if m.kind is EntityKind.PRICE
+    ]
+    assert mention.normalized == "29.99 EUR"
+
+
+def test_gbp_still_normalises_as_gbp():
+    """加 EUR 不能把 GBP 顺手改坏 —— 归一化币种必须跟着匹配到的符号走。"""
+    (mention,) = [
+        m for m in RULES.extract_entities("It costs £19.99.", ALL_KINDS)
+        if m.kind is EntityKind.PRICE
+    ]
+    assert mention.normalized == "19.99 GBP"
