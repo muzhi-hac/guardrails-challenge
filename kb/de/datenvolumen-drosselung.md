@@ -7,7 +7,7 @@ version: 2026-01-01
 
 ## Drosselung nach Verbrauch des Inklusivvolumens
 
-Stand: 2026-01-01
+Stand: 01.01.2026
 
 Ist das Inklusivvolumen Ihres Tarifs verbraucht, surfen Sie mit gedrosselter
 Geschwindigkeit weiter: 64 kbit/s im Download und im Upload. Es entstehen keine
@@ -19,7 +19,7 @@ Datenvolumen wieder zur Verfügung.
 
 ## Datenautomatik
 
-Stand: 2026-01-01
+Stand: 01.01.2026
 
 Die Datenautomatik ist optional und standardmäßig ausgeschaltet. Ist
 sie eingeschaltet, buchen wir nach Verbrauch des Inklusivvolumens automatisch

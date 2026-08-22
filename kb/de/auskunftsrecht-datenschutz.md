@@ -7,7 +7,7 @@ version: 2026-01-01
 
 ## Gesetzlicher Auskunftsanspruch nach der DSGVO
 
-Stand: 2026-01-01
+Stand: 01.01.2026
 
 Dieser Abschnitt gibt die gesetzliche Lage wieder und gilt unabhängig von
 unseren internen Abläufen.
@@ -24,7 +24,7 @@ Datenübertragbarkeit.
 
 ## Unser Auskunftsverfahren
 
-Stand: 2026-01-01
+Stand: 01.01.2026
 
 Dieser Abschnitt beschreibt, wie wir Anträge in der Praxis bearbeiten.
 

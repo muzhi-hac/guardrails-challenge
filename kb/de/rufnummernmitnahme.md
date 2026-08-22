@@ -7,7 +7,7 @@ version: 2026-01-01
 
 ## Rufnummer zu uns mitnehmen
 
-Stand: 2026-01-01
+Stand: 01.01.2026
 
 Ihre bisherige Rufnummer nehmen Sie kostenlos zu uns mit. Für die Portierung
 berechnen wir kein Entgelt, weder bei Vertragsschluss noch später.
@@ -18,7 +18,7 @@ Kundennummer.
 
 ## Ablauf und Dauer
 
-Stand: 2026-01-01
+Stand: 01.01.2026
 
 Die Portierung dauert 1 bis 3 Werktage. Am Schalttag ist der Anschluss für
 kurze Zeit nicht erreichbar; wir kündigen das Zeitfenster vorab per SMS an.
@@ -29,7 +29,7 @@ SIM-Karte aktiv.
 
 ## Frist nach Vertragsende
 
-Stand: 2026-01-01
+Stand: 01.01.2026
 
 Eine Rufnummer können Sie noch bis zu 90 Tage nach Vertragsende mitnehmen.
 Danach geht sie an den Nummernbestand zurück und steht nicht mehr zur

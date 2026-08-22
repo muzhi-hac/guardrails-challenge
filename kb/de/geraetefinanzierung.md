@@ -7,7 +7,7 @@ version: 2026-01-01
 
 ## Ratenzahlung für Endgeräte
 
-Stand: 2026-01-01
+Stand: 01.01.2026
 
 Endgeräte können Sie in Raten zahlen. Die Laufzeit der Finanzierung beträgt
 24 Monate und läuft parallel zur Mindestlaufzeit Ihres Mobilfunkvertrages.
@@ -18,7 +18,7 @@ getrennt von den Tarifkosten aus.
 
 ## Vorzeitige Beendigung
 
-Stand: 2026-01-01
+Stand: 01.01.2026
 
 Endet der Mobilfunkvertrag vor Ablauf der 24 Monate, wird der noch offene
 Betrag aus der Gerätefinanzierung als Restzahlung fällig. Wir weisen die

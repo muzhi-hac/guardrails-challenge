@@ -7,7 +7,7 @@ version: 2026-01-01
 
 ## Rechnungsstellung
 
-Stand: 2026-01-01
+Stand: 01.01.2026
 
 Wir stellen Ihre Rechnung monatlich am 3. Werktag des Folgemonats aus, also
 3 Werktage nach Ende des Abrechnungszeitraums. Sie finden sie am selben Tag in
@@ -21,7 +21,7 @@ Abruf bereit.
 
 ## Zahlungsarten
 
-Stand: 2026-01-01
+Stand: 01.01.2026
 
 Sie zahlen wahlweise per SEPA-Lastschrift oder per Überweisung. Bei
 Lastschrift buchen wir den Rechnungsbetrag frühestens 5 Werktage nach
@@ -34,7 +34,7 @@ der nächsten Rechnung.
 
 ## Zahlungsverzug und Mahngebühr
 
-Stand: 2026-01-01
+Stand: 01.01.2026
 
 Zahlungsverzug tritt ein, wenn der Rechnungsbetrag nicht innerhalb von
 14 Tagen ab Rechnungsdatum bei uns eingegangen ist. Für die erste Mahnung

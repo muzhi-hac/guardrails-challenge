@@ -7,7 +7,7 @@ version: 2026-01-01
 
 ## Gesetzliche Vorgaben zur Kündigungsfrist
 
-Stand: 2026-01-01
+Stand: 01.01.2026
 
 Dieser Abschnitt gibt die gesetzliche Lage wieder und gilt unabhängig von
 unseren Vertragsbedingungen.
@@ -20,7 +20,7 @@ nicht zulässig.
 
 ## Unsere Vertragsbedingungen
 
-Stand: 2026-01-01
+Stand: 01.01.2026
 
 Dieser Abschnitt beschreibt unsere eigene Vertragspolitik.
 
@@ -35,7 +35,7 @@ Kündigung in Textform und nennen darin das Vertragsende.
 
 ## Kündigungswege
 
-Stand: 2026-01-01
+Stand: 01.01.2026
 
 Sie können in Ihrem Kundenkonto über die Schaltfläche „Verträge hier kündigen“
 kündigen, schriftlich per Post oder in Textform über das Kontaktformular. Die

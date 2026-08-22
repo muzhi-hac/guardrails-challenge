@@ -7,7 +7,7 @@ version: 2026-01-01
 
 ## Kundenservice
 
-Stand: 2026-01-01
+Stand: 01.01.2026
 
 Unser Kundenservice ist Montag bis Freitag von 8 bis 20 Uhr und samstags von
 9 bis 14 Uhr erreichbar. An bundesweiten Feiertagen bleibt die Hotline
@@ -19,7 +19,7 @@ zuordnen können.
 
 ## Störungshotline
 
-Stand: 2026-01-01
+Stand: 01.01.2026
 
 Die Störungshotline ist 24/7 erreichbar, auch an Sonn- und Feiertagen.
 Störungen können Sie dort jederzeit melden; die Entstörfrist von 48 Stunden

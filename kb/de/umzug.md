@@ -7,7 +7,7 @@ version: 2026-01-01
 
 ## Umzugsservice
 
-Stand: 2026-01-01
+Stand: 01.01.2026
 
 Ihren Vertrag nehmen Sie an die neue Adresse mit. Für den Umzug des Anschlusses
 berechnen wir einmalig 29,90 EUR. Rufnummer, Tarif und Laufzeit bleiben
@@ -19,7 +19,7 @@ geplanten Schalttermin.
 
 ## Vorlaufzeit
 
-Stand: 2026-01-01
+Stand: 01.01.2026
 
 Bitte melden Sie den Umzug spätestens 6 Wochen vor dem gewünschten
 Schalttermin. Bei kürzerem Vorlauf bemühen wir uns um den Wunschtermin, können
@@ -30,7 +30,7 @@ Adresse liegen in der Regel höchstens 3 Werktage.
 
 ## Sonderkündigungsrecht bei fehlender Versorgung
 
-Stand: 2026-01-01
+Stand: 01.01.2026
 
 Können wir die vertraglich vereinbarte Leistung an der neuen Adresse nicht
 erbringen, haben Sie ein Sonderkündigungsrecht. Die Kündigung wird zum Ende des

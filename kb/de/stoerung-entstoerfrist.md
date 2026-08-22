@@ -7,7 +7,7 @@ version: 2026-01-01
 
 ## Störung melden
 
-Stand: 2026-01-01
+Stand: 01.01.2026
 
 Störungen nehmen wir rund um die Uhr entgegen: die Störungshotline ist 24/7
 erreichbar, das Störungsformular im Kundenkonto ebenfalls. Bitte halten Sie
@@ -19,7 +19,7 @@ nach 4 Stunden mit einer ersten Einschätzung.
 
 ## Entstörfrist
 
-Stand: 2026-01-01
+Stand: 01.01.2026
 
 Die Entstörfrist beträgt 48 Stunden ab Eingang der Störungsmeldung. Innerhalb
 dieser Frist beheben wir die Störung oder nennen Ihnen einen konkreten Termin
@@ -30,7 +30,7 @@ Entstörfrist mindestens 2 Terminfenster an.
 
 ## Gutschrift bei längeren Störungen
 
-Stand: 2026-01-01
+Stand: 01.01.2026
 
 Dauert die vollständige Unterbrechung länger als 72 Stunden, schreiben wir
 Ihnen die Grundgebühr für jeden vollen Ausfalltag gut. Die Gutschrift erfolgt

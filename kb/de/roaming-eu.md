@@ -7,7 +7,7 @@ version: 2026-01-01
 
 ## Roaming innerhalb der EU
 
-Stand: 2026-01-01
+Stand: 01.01.2026
 
 EU-Roaming ist in allen Tarifen ohne Aufpreis enthalten. Telefonie, SMS und
 Datenvolumen werden im EU-Ausland genauso abgerechnet wie in Deutschland; das
@@ -20,7 +20,7 @@ Fair-Use-Grenze verbraucht sind.
 
 ## Roaming außerhalb der EU
 
-Stand: 2026-01-01
+Stand: 01.01.2026
 
 Außerhalb der EU gilt ein Datenpreis von 0,49 EUR je MB. Das Inklusivvolumen
 Ihres Tarifs gilt dort nicht.

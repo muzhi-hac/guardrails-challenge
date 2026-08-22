@@ -7,7 +7,7 @@ version: 2026-01-01
 
 ## Tarifübersicht
 
-Stand: 2026-01-01
+Stand: 01.01.2026
 
 | Tarif | Preis pro Monat | Datenvolumen |
 |---|---|---|
@@ -19,7 +19,7 @@ Alle Tarife enthalten eine Flatrate für Telefonie und SMS in alle deutschen Net
 
 ## Tarifwechsel
 
-Stand: 2026-01-01
+Stand: 01.01.2026
 
 Ein Wechsel in einen höheren Tarif ist jederzeit zum nächsten Werktag möglich.
 Ein Wechsel in einen niedrigeren Tarif ist zum Ende des Abrechnungsmonats
