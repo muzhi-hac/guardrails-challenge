@@ -189,3 +189,59 @@ async def test_document_text_containing_closing_tag_cannot_escape_the_region(bot
     assert closer in rendered
     # 注入的尾巴仍然在 nonce 分隔的区块*内部*：它出现在真正的闭合标记之前。
     assert rendered.index(trailer) < rendered.index(closer)
+
+
+class EmptyRetriever:
+    """Matches nothing, for any query -- the shape of the retriever on the
+    most likely first message a customer sends (e.g. "Hallo")."""
+
+    def search(self, query, *, k):
+        return ()
+
+
+async def test_empty_retrieval_still_renders_a_nonce_delimited_region(bot):
+    """Finding 5: zero retrieval must not render no ``<document>`` block at
+    all. The system prompt always names a nonce (see ``_untrusted_note``);
+    if the user turn carries no nonce-delimited region for that nonce to
+    refer to, the instruction points at something that appears nowhere.
+    """
+    spy, kb, profile = bot
+    chatbot = Chatbot(EmptyRetriever(), spy, profile)
+    turn = await chatbot.reply("Hallo", ())
+    assert turn.retrieved == ()
+    rendered = spy.messages[-1].content
+    nonce = _NONCE_RE.search(rendered).group(1)
+    assert "<document" in rendered
+    assert f'</document nonce="{nonce}">' in rendered
+    # The same nonce the system prompt names must be the one actually
+    # rendered, exactly as for a non-empty retrieval.
+    assert f'nonce="{nonce}"' in spy.system
+
+
+async def test_empty_retrieval_region_names_no_documents(bot):
+    """The no-documents region must not claim to contain any document --
+    no ``chunk_id``/``doc_id`` attribute, no document text."""
+    spy, kb, profile = bot
+    chatbot = Chatbot(EmptyRetriever(), spy, profile)
+    await chatbot.reply("Hallo", ())
+    rendered = spy.messages[-1].content
+    assert 'id="' not in rendered
+
+
+async def test_empty_retrieval_marker_is_german_for_de_locale(bot):
+    spy, kb, profile = bot
+    chatbot = Chatbot(EmptyRetriever(), spy, profile)
+    await chatbot.reply("Hallo", ())
+    rendered = spy.messages[-1].content
+    assert "Keine passenden Dokumente" in rendered
+
+
+async def test_empty_retrieval_marker_is_english_for_en_locale():
+    """Marker language is derived from ``profile.locale``, not hardcoded."""
+    profile = load_profile(PROFILES / "telco_en.yaml").resolve(Mode.CHAT)
+    spy = SpyCompletion()
+    chatbot = Chatbot(EmptyRetriever(), spy, profile)
+    await chatbot.reply("Hello", ())
+    rendered = spy.messages[-1].content
+    assert "No matching documents were found" in rendered
+    assert "Keine passenden Dokumente" not in rendered
