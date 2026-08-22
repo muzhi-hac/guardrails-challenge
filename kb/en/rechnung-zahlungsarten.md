@@ -9,8 +9,8 @@ version: 2026-01-01
 
 Last reviewed: 2026-01-01
 
-We issue your bill monthly, on the 3rd working day of the following month
-(working day 3). It appears in your account under "Bills" the same day, and we
+We issue your bill monthly, on the 3rd working day of the following month.
+It appears in your account under "Bills" the same day, and we
 will send you an e-mail notification as well if you would like one.
 
 Each billing period covers one full calendar month. The monthly charge is

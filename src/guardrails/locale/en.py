@@ -71,7 +71,33 @@ _DATE_MONTH_YEAR_RE = re.compile(rf"\b({_MONTH_ALT})\s+(\d{{4}})\b")
 _DURATION_RE = re.compile(
     r"\b(\d+)[\s-]*(months?|years?|days?|weeks?)\b", re.IGNORECASE
 )
-_NUMBER_RE = re.compile(rf"(?<![\w.,]){_AMOUNT}(?![\w])")
+
+_ORDINAL_SUFFIX = r"(?:st|nd|rd|th)"
+_ORDINAL_INT = r"\d{1,3}(?:,\d{3})+|\d+"
+"""Integer only -- an ordinal never carries a decimal fraction, so this is
+``_AMOUNT`` without the ``.\\d{1,2}`` tail. Keeping it separate stops the
+ordinal branch from ever nibbling at a price like ``29.99``."""
+
+# German already extracts a numeral out of its own ordinal form: `am 3.
+# Werktag` yields NUMBER `3` because the ordinal marker there is a bare full
+# stop. English marks the same grammatical thing with a letter suffix instead
+# (`3rd`, `21st`, `102nd`), which the plain amount pattern below does not
+# recognise at all -- the trailing `(?![\w])` guard exists to reject a digit
+# run that a word continues (`29x`), and a bare ordinal suffix is exactly such
+# a continuation as far as that guard can tell. Left alone, English therefore
+# extracts nothing from a sentence where German extracts `3`, and a mirror
+# whose two sides extract different NUMBER sets cannot support the grounding
+# guard that later compares reply entities against retrieved chunks. So the
+# ordinal branch below recognises the suffix explicitly and strips it: the
+# numeral is the entity, the suffix is not part of it and never appears in
+# ``normalized``. It still requires the *whole* token to end at the suffix
+# (`(?![\w])` after it), so a genuine word continuation (`3rdclass`,
+# `abc3rdxyz`) is rejected exactly as a bare number followed by a letter
+# would be.
+_NUMBER_RE = re.compile(
+    rf"(?<![\w.,])(?:(?P<ordinal>{_ORDINAL_INT}){_ORDINAL_SUFFIX}(?![\w])"
+    rf"|(?P<amount>{_AMOUNT})(?![\w]))"
+)
 
 _DURATION_UNITS = {"month": "M", "year": "Y", "day": "D", "week": "W"}
 
@@ -203,7 +229,7 @@ class EnglishRules:
                 claim(EntityMention(EntityKind.DURATION, m.group(), f"P{value}{unit}", m.span()))
 
         for m in _NUMBER_RE.finditer(text):
-            amount = _parse_amount(m.group())
+            amount = _parse_amount(m.group("ordinal") or m.group("amount"))
             if amount is not None and not _overlaps(m.span(), taken):
                 claim(EntityMention(EntityKind.NUMBER, m.group(), format_decimal(amount), m.span()))
 

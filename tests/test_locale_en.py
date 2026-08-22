@@ -123,6 +123,52 @@ class TestEntities:
     def test_comma_thousands_separator(self):
         assert kinds_of("You get 1,000 minutes.") == [(EntityKind.NUMBER, "1,000", "1000")]
 
+    @pytest.mark.parametrize(
+        "text,raw,normalized",
+        [
+            ("It is due on the 1st of the month.", "1st", "1"),
+            ("Take the 2nd option.", "2nd", "2"),
+            ("It is the 3rd working day.", "3rd", "3"),
+            ("Reached the 21st milestone.", "21st", "21"),
+            ("Reached the 102nd milestone.", "102nd", "102"),
+        ],
+    )
+    def test_ordinals_extract_as_numbers(self, text, raw, normalized):
+        """English marks an ordinal with a letter suffix instead of German's
+        bare full stop. The suffix is not part of the entity: only the
+        numeral is, matching what German produces for the same fact."""
+        numbers = [e for e in RULES.extract_entities(text, ALL_KINDS) if e.kind is EntityKind.NUMBER]
+        assert [(n.raw, n.normalized) for n in numbers] == [(raw, normalized)]
+
+    def test_price_with_decimals_is_not_truncated_by_ordinal_handling(self):
+        """`29.99` must stay a price of `29.99`, never collapse to the
+        ordinal-style numeral `29`."""
+        prices = [e for e in RULES.extract_entities("It costs £29.99.", ALL_KINDS) if e.kind is EntityKind.PRICE]
+        assert [p.normalized for p in prices] == ["29.99 GBP"]
+        assert not [e for e in RULES.extract_entities("It costs £29.99.", ALL_KINDS) if e.kind is EntityKind.NUMBER]
+
+    def test_bare_number_followed_by_non_ordinal_letter_still_does_not_match(self):
+        """A digit run continuing into an unrelated word must still be
+        rejected, exactly as before ordinals were recognised."""
+        assert not [e for e in RULES.extract_entities("Model 29x is not available.", ALL_KINDS)
+                    if e.kind is EntityKind.NUMBER]
+        assert not [e for e in RULES.extract_entities("abc3rdxyz has no meaning.", ALL_KINDS)
+                    if e.kind is EntityKind.NUMBER]
+
+    def test_de_en_ordinal_mirror_extracts_the_same_number(self):
+        """Regression guard for the actual defect: the DE/EN billing-date pair
+        must extract the same NUMBER set so the cross-locale grounding guard
+        stays coherent, with no padding required in the English prose."""
+        de = get_rules(Locale.DE_DE).extract_entities(
+            "Wir stellen Ihre Rechnung am 3. Werktag des Folgemonats aus.",
+            frozenset({EntityKind.NUMBER}),
+        )
+        en = RULES.extract_entities(
+            "We issue your bill on the 3rd working day of the following month.",
+            frozenset({EntityKind.NUMBER}),
+        )
+        assert {m.normalized for m in de} == {m.normalized for m in en} == {"3"}
+
     def test_spans_index_the_original_text(self):
         text = "From 01/02/2026 the tariff costs £19.99 for 24 months."
         for entity in RULES.extract_entities(text, ALL_KINDS):
