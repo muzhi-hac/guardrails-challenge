@@ -1,11 +1,14 @@
-"""知识库文档的加载。
+"""Loading knowledge-base documents.
 
-Markdown + front-matter，一篇一个文件。选 Markdown 而不是 JSON：溯源守卫的
-evidence 要引用原文，人可读的语料让评测结果可以肉眼复核。选 front-matter 而不是
-单独的 manifest：locale 跟着文档走，加一篇文档不需要改第二个文件。
+Markdown plus front matter, one file per document. Markdown rather than
+JSON: the grounding guard's evidence has to quote the original text, and a
+human-readable corpus lets evaluation results be checked by eye.
+Front matter rather than a separate manifest: locale travels with the
+document, so adding one more document never requires editing a second file.
 
-文档的唯一键是 ``(locale, doc_id)``。德英镜像共用逻辑 ``doc_id`` —— 它们是同一个
-客户的两个渠道，不是两份内容。
+A document's unique key is ``(locale, doc_id)``. The German and English
+mirrors share the same logical ``doc_id`` — they are two channels for the
+same client, not two different pieces of content.
 """
 
 from __future__ import annotations
@@ -33,12 +36,16 @@ class Document:
 
 
 def _parse(path: Path, root: Path) -> Document:
-    """解析单个文档；任何失败都在消息里带上文件路径。
+    """Parse a single document; any failure carries the file path in its
+    message.
 
-    ``_parse_body`` 里已经手写了两处带路径的 ``ValueError``（缺 front matter、
-    缺字段）——那两处直接透传。其余失败模式（front matter 没闭合导致的
-    unpack 报错、locale 拼错导致的 ``ValueError``、YAML 本身格式错导致的
-    ``yaml.YAMLError``）在这里统一补上路径，不需要在每个失败点单独处理。
+    ``_parse_body`` already hand-writes two ``ValueError``s with the path
+    included (missing front matter, missing field) — those pass straight
+    through unchanged. Every other failure mode (an unpack error from
+    unclosed front matter, a ``ValueError`` from a misspelled locale, a
+    ``yaml.YAMLError`` from malformed YAML itself) gets the path attached
+    here in one place, instead of being handled separately at each failure
+    site.
     """
     try:
         return _parse_body(path, root)
@@ -69,10 +76,13 @@ def _parse_body(path: Path, root: Path) -> Document:
 
 
 def load_documents(root: Path) -> tuple[Document, ...]:
-    """加载 ``root`` 下的全部文档，按 ``(locale, doc_id)`` 稳定排序。
+    """Load every document under ``root``, stably sorted by
+    ``(locale, doc_id)``.
 
-    排序是刻意的：文件系统的遍历顺序在不同机器上不同，而 chunk 的构建顺序会流进
-    trace。和 M5「verdict 按注册顺序而非完成顺序」是同一条原则。
+    The sort is deliberate: filesystem traversal order differs between
+    machines, and chunk construction order flows into the trace. Same
+    principle as M5's "verdicts come back in registry order, not completion
+    order".
     """
     docs = [_parse(path, root) for path in sorted(root.rglob("*.md"))]
     return tuple(sorted(docs, key=lambda d: (d.locale.value, d.doc_id)))

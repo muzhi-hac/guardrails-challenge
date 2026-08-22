@@ -1,4 +1,4 @@
-"""知识库与检索。"""
+"""The knowledge base and retrieval."""
 
 from __future__ import annotations
 

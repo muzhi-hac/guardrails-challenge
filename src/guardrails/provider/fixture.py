@@ -1,15 +1,22 @@
-"""确定性回放。
+"""Deterministic replay.
 
-哈希键覆盖 schema_version + system + canonical_messages + max_tokens + model。
-少任何一项都会让不同的请求错误命中同一条回放，而那种 bug 的表现是「测试通过但测的
-是别的东西」。
+The hash key covers schema_version + system + canonical_messages + max_tokens
++ model. Leaving out any one of these would let different requests wrongly
+hit the same recording, and that bug's symptom is "the test passes, but it
+is testing something else."
 
-未命中时抛异常而不是回退：静默回退等于测试在骗人。
+A miss raises rather than falling back: a silent fallback means the test is
+lying.
 
-``latency_ms`` 由录制时写入 JSON 记录，回放时原样返回，而不是在这里测量。一次回放调用
-诚实的延迟就是被回放的那次真实调用的延迟：录制时的网络往返、排队、模型生成耗时才是
-后续评估要看的数字；这里只有一次字典查找和一次 dataclass 构造，测出来的是微秒级的
-分发开销，把它当作延迟写进 trace 就是在往评估记录里灌虚构数据。
+``latency_ms`` is written into the JSON record at recording time and returned
+unchanged at replay time, rather than being measured here. The honest
+latency for a replayed call is the latency of the real call that was
+recorded: the network round trip, queueing, and model generation time at
+recording time are the numbers a later evaluation actually needs. What
+happens here is one dictionary lookup and one dataclass construction —
+measuring that would capture microsecond-scale dispatch overhead, and
+writing that into the trace as "latency" would be pouring fabricated data
+into the evaluation record.
 """
 
 from __future__ import annotations
@@ -24,7 +31,8 @@ from guardrails.provider.base import CompletionResult, Turn
 __all__ = ["FixtureCompletion", "SCHEMA_VERSION", "fixture_key"]
 
 SCHEMA_VERSION = 3
-"""fixture 格式版本。改格式时递增，旧记录因此显式失效而不是静默错配。"""
+"""The fixture format version. Bump it when the format changes, so old
+records are explicitly invalidated instead of silently mismatched."""
 
 _REQUIRED_FIELDS = (
     "text", "model", "input_tokens", "output_tokens", "latency_ms", "stop_reason",

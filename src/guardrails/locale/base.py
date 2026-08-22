@@ -114,12 +114,14 @@ class LocaleRules(Protocol):
         ...
 
     def tokenize(self, text: str) -> tuple[str, ...]:
-        """检索用词元。
+        """Tokens for retrieval.
 
-        与 :meth:`extract_entities` 不同，这里的产出是给 BM25 索引用的，允许一个
-        表面词展开出多个词元（德语的复合词成分与变音符别名）。展开一律**叠加**，
-        原词永远保留 —— 精确词匹配是这个检索器的主要能力，任何把原词换掉的规范化
-        都会削弱它。
+        Unlike :meth:`extract_entities`, this output feeds the BM25 index and
+        may expand one surface word into several tokens (German compound
+        constituents and umlaut aliases). Expansion is always **additive** —
+        the original word is always kept — because exact word matching is
+        this retriever's primary capability, and any normalisation that
+        replaces the original word instead of adding to it would weaken it.
         """
         ...
 
@@ -149,29 +151,36 @@ _TOKEN_RE = re.compile(r"[0-9]+(?:[.,][0-9]+)*|[^\W\d_]+(?:-[^\W\d_]+)*", re.UNI
 
 
 def surface_tokens(text: str) -> tuple[str, ...]:
-    """按语言无关的规则切出表面词元。
+    """Split into surface tokens by language-independent rules.
 
-    数字保持完整（``29,99`` 与 ``29.99`` 都是一个词元），带连字符的词先整体切出，
-    连字符成分的展开由各语言的 ``tokenize`` 决定。
+    Numbers stay intact (``29,99`` and ``29.99`` are each one token), and a
+    hyphenated word is cut out whole first; whether its hyphenated
+    constituents are also expanded is decided by each language's
+    ``tokenize``.
     """
     return tuple(m.group(0) for m in _TOKEN_RE.finditer(text))
 
 
 def split_hyphenated(token: str) -> tuple[str, ...]:
-    """``eu-roaming`` -> ``(eu-roaming, eu, roaming)``；无连字符时原样返回。"""
+    """``eu-roaming`` -> ``(eu-roaming, eu, roaming)``; returned unchanged when
+    there is no hyphen."""
     if "-" not in token:
         return (token,)
     return (token, *(part for part in token.split("-") if part))
 
 
 def simple_tokenize(text: str) -> tuple[str, ...]:
-    """没有形态学的语言够用的分词：切词、casefold、拆连字符。
+    """Tokenization sufficient for a language with no relevant morphology: split
+    into words, casefold, split hyphens.
 
-    英语的最终实现就是这一份。德语在此之上再叠复合词分解与别名闭包，所以德语**不**
-    调用它 —— 见 ``locale/de.py``。
+    This is English's final implementation. German layers compound
+    decomposition and alias closure on top and therefore **does not** call
+    this — see ``locale/de.py``.
 
-    ``dict.fromkeys`` 是**每个原始词元内部**去重：一个表面词展开出的多个变体各计一次，
-    但文档里真实重复出现的词仍然重复计入，BM25 的 TF 因此保持可解释。
+    ``dict.fromkeys`` deduplicates **within each original token**: the several
+    variants produced by expanding one surface word each count once, but a
+    word that genuinely repeats in the document still counts again, so
+    BM25's TF stays interpretable.
     """
     out: list[str] = []
     for token in surface_tokens(text):

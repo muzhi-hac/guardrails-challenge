@@ -1,15 +1,20 @@
-"""词汇层检索。
+"""Lexical retrieval.
 
-为什么不是向量检索：这个领域的查询是精确词 —— 资费代号、条款编号、
-``Kündigungsfrist``。稠密向量会把它们糊掉，``Tarif S`` 和 ``Tarif M`` 可能比任一个
-离正确文档更近。德语真正的检索难点是复合词，那由 ``locale`` 的分词器处理，代价是
-一份词典而不是一个 400MB 的模型。
+Why not vector retrieval: queries in this domain are exact words — tariff
+codes, clause numbers, ``Kündigungsfrist``. A dense vector would blur them
+together; ``Tarif S`` and ``Tarif M`` could end up closer to each other than
+either is to the correct document. The real retrieval difficulty in German
+is compounding, and that is handled by the ``locale`` tokenizer, at the cost
+of a lexicon rather than a 400MB model.
 
-生产里这一层是 Elasticsearch —— analyzer、字段权重和同义词表都要针对语料调。这里用
-``rank_bm25`` 是为了让评测离线且可复现；十八篇文档上引入向量库是纯运维负担。
+In production this layer would be Elasticsearch — the analyzer, field
+weights, and synonym tables all need tuning against the corpus. ``rank_bm25``
+is used here to keep evaluation offline and reproducible; introducing a
+vector store over eighteen documents would be pure operational overhead.
 
-分词权在我们手里：``rank_bm25`` 接受已分词的语料，所以复合词分解与别名闭包在进索引
-之前就完成了。
+Tokenization stays in our hands: ``rank_bm25`` accepts an already-tokenized
+corpus, so compound decomposition and alias closure are done before anything
+enters the index.
 """
 
 from __future__ import annotations
@@ -27,12 +32,13 @@ __all__ = ["Bm25Retriever", "Retriever"]
 
 class Retriever(Protocol):
     def search(self, query: str, *, k: int) -> tuple[Scored[Chunk], ...]:
-        """返回至多 ``k`` 条，按分数降序；同分按 ``chunk_id`` 升序。"""
+        """Return at most ``k`` results, ordered by descending score; ties
+        broken by ascending ``chunk_id``."""
         ...
 
 
 class Bm25Retriever:
-    """一个 locale 一个索引。"""
+    """One index per locale."""
 
     def __init__(self, chunks: Sequence[Chunk], rules: LocaleRules) -> None:
         self._chunks: tuple[Chunk, ...] = tuple(chunks)
@@ -57,12 +63,18 @@ class Bm25Retriever:
         ranked = sorted(
             (Scored(chunk, float(score))
              for chunk, score in zip(self._chunks, scores, strict=True)
-             # 过滤器：只保留查询词触及的 chunk。初看 BM25 的负 idf 公式
-             # ``ln((N-df+0.5)/(df+0.5))`` 会认为一个词在语料半数以上文档出现时
-             # idf 为负，分数归零。但 BM25Okapi 的实现把负 idf 压到 epsilon 倍
-             # 平均 idf（正数），所以这个语料上常见德语虚词如 "und der" 查询
-             # 照样返回排序结果。过滤器因此只拦截查询词完全不在 chunk，或
-             # 整个查询超出词表的情况。这一点已在语料上实证验证，而非假设。
+             # Filter: keep only chunks the query terms actually touch. On a
+             # first look, BM25's negative-idf formula
+             # ``ln((N-df+0.5)/(df+0.5))`` seems to say that a term appearing
+             # in more than half the corpus gets a negative idf and its
+             # contribution zeroes out. But BM25Okapi's implementation floors
+             # a negative idf at epsilon times the (positive) average idf, so
+             # a query for common German function words like "und der" still
+             # returns a ranked result on this corpus. The filter therefore
+             # only blocks the case where the query terms are entirely absent
+             # from a chunk, or the whole query falls outside the vocabulary.
+             # This has been verified empirically against the corpus, not
+             # assumed.
              if score > 0.0),
             key=lambda s: (-s.score, s.item.chunk_id),
         )

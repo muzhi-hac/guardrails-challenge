@@ -1,28 +1,44 @@
-"""真实的 Anthropic 调用。
+"""The real Anthropic call.
 
-凭据与 base_url 全部从环境变量读（``ANTHROPIC_API_KEY`` / ``ANTHROPIC_BASE_URL``）。
-仓库内不出现任何 key 或端点主机名 —— 这条有一个可执行的验收项（仓库级 grep），见 README。
+Credentials and the base URL are read entirely from environment variables
+(``ANTHROPIC_API_KEY`` / ``ANTHROPIC_BASE_URL``). No key or endpoint hostname
+appears anywhere in this repository — this has an executable acceptance
+check (a repository-wide grep), see README.
 
-不传 ``thinking``，保持模型默认。据 Anthropic 官方文档，关闭 thinking 在当前一代模型
-上有两个失效模式：把工具调用写进可见文本、以及泄漏内部标签；降 effort 才是受支持的
-延迟控制手段。**那是文档来源的判断，不是本项目测出来的**，两者不要混。
+``thinking`` is not passed, leaving the model's default. Per Anthropic's
+official documentation, disabling thinking on the current generation of
+models has two failure modes: a tool call can land in the visible text, and
+internal tags can leak; lowering effort is the supported latency control
+instead. **That is a judgement drawn from the documentation, not something
+this project measured** — the two must not be conflated.
 
-实践上：chat 调用的延迟不在守卫预算内 —— 守卫是绕着它跑的 —— 所以这里不需要延迟控制。
+In practice: a chat call's latency is not inside a guard budget — guards run
+around it — so no latency control is needed here.
 
 ---
-本项目所配置的第三方中转端点的行为观察，验证于 2026-08-22，仅适用于当时配置的该
-中转端点、账户路由、本模块的调用方式和当时的模型标识；不代表官方端点、其他渠道或
-未来行为（同一份观察也记录在 ``guardrails.provider.base`` 的模块文档里，因为它是
-M7 judge 设计的前提）：
+Behaviour observations about the third-party relay endpoint this project is
+configured against, verified 2026-08-22, apply only to that relay endpoint,
+account routing, this module's calling convention, and the model identifier
+in effect at that time; they do not represent the official endpoint, other
+channels, or future behaviour (the same observations are also recorded in
+the module docstring of ``guardrails.provider.base``, because they are a
+premise of the M7 judge design):
 
-- 请求携带非法 effort 值时未收到参数错误，使用有效值时也未观察到可验证的约束效果。
-  因此本项目不依赖该字段强制控制 judge effort。
-- json-schema output format 在该测试范围内未强制返回符合 schema 的结果，而是返回
-  普通文本。因此后续的 judge 模块改用强制 tool choice —— 同日、同范围内验证过可用。
-- 携带 ``max_tokens=32`` 的请求返回了约 700 字符的文本，``stop_reason`` 为
-  ``"end_turn"``——该中转端点没有在 32 个 token 处截断。因此「思考耗尽预算、正文
-  为空」这条路径无法在该端点上用实时调用复现验证；它靠构造（``stop_reason`` 字段
-  必填、见下方 ``complete`` 里对 ``None`` 的处理）和单元测试兜底。
+- A request carrying an invalid effort value received no parameter error,
+  and no verifiable constraining effect was observed with valid values
+  either. This project therefore does not rely on that field to enforce
+  judge effort.
+- The json-schema output format did not, within the tested scope, force a
+  schema-conforming result — it returned plain text instead. The later judge
+  module therefore switches to forced tool choice — verified as working on
+  the same day, within the same scope.
+- A request carrying ``max_tokens=32`` returned roughly 700 characters of
+  text with ``stop_reason`` of ``"end_turn"`` — this relay endpoint did not
+  truncate at 32 tokens. The path where "thinking exhausts the budget, the
+  body comes back empty" therefore cannot be reproduced against this
+  endpoint with a live call; it rests instead on construction (the
+  ``stop_reason`` field is required — see the handling of ``None`` in
+  ``complete`` below) and on unit tests.
 """
 
 from __future__ import annotations
@@ -60,7 +76,8 @@ def _require_api_key() -> str:
 
 
 class AnthropicCompletion:
-    """``Completion`` 协议的真实实现，走 Anthropic Messages API。"""
+    """The real implementation of the ``Completion`` protocol, via the
+    Anthropic Messages API."""
 
     def __init__(self, model: str, client: AsyncAnthropic | None = None) -> None:
         self._model = model
@@ -81,19 +98,24 @@ class AnthropicCompletion:
         )
         latency_ms = (time.perf_counter() - started) * 1000
 
-        # 响应里可能同时含 thinking block（Opus 5 默认开 thinking）——
-        # 只拼接 type == "text" 的块，直接取 content[0].text 在开了 thinking 时
-        # 会拿到错误内容甚至报错。
+        # The response may also contain a thinking block (Opus 5 has thinking
+        # on by default) — only blocks with type == "text" are concatenated;
+        # reading content[0].text directly would get the wrong content, or
+        # raise, whenever thinking is on.
         text = "".join(
             block.text for block in response.content if block.type == "text"
         )
 
-        # SDK 类型是 ``stop_reason: StopReason | None`` —— 按文档它只在流式响应的
-        # 中间事件里为 ``None``，一个已完成的 ``Message`` 理论上总有值。但
-        # ``CompletionResult.stop_reason`` 是必填 ``str``（理由见 base.py），
-        # 而这里没有立场把"SDK 违反了自己的文档承诺"升级成异常——那是策略判断，
-        # 不是这一层该做的事。所以退化成一个明确写出"未知"的哨兵字符串，而不是让
-        # ``None`` 悄悄混进一个类型上承诺是 ``str`` 的字段。
+        # The SDK's type is ``stop_reason: StopReason | None`` — per the docs
+        # it is ``None`` only in the intermediate events of a streamed
+        # response, and a completed ``Message`` should in principle always
+        # have a value. But ``CompletionResult.stop_reason`` is a required
+        # ``str`` (see base.py for why), and this layer has no standing to
+        # escalate "the SDK violated its own documented contract" into an
+        # exception — that is a policy decision, not this layer's job. So it
+        # falls back to a sentinel string that explicitly spells out
+        # "unknown", rather than letting ``None`` quietly slip into a field
+        # whose type promises ``str``.
         stop_reason = response.stop_reason if response.stop_reason is not None else "unknown"
 
         return CompletionResult(

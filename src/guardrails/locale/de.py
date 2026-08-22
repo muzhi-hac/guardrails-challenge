@@ -101,16 +101,17 @@ def _parse_amount(raw: str) -> Decimal | None:
         return None
 
 
-# --- 检索分词 --------------------------------------------------------------
+# --- retrieval tokenization -------------------------------------------------
 
 _UMLAUT_ALIASES: dict[str, str] = {"ä": "ae", "ö": "oe", "ü": "ue"}
 
 
 def _ascii_alias(token: str) -> str | None:
-    """``kündigung`` -> ``kuendigung``；无变音符时返回 ``None``。
+    """``kündigung`` -> ``kuendigung``; returns ``None`` when there is no umlaut.
 
-    只折叠 ä/ö/ü。不做 ü->u：收益是假想的，代价是把本该区分的词并到一起。
-    ß 不在这里处理 —— ``casefold()`` 已经把它变成 ``ss``。
+    Only ä/ö/ü are folded. Not ü->u: the benefit would be imaginary, and the
+    cost is merging words that ought to stay distinct. ß is not handled here
+    — ``casefold()`` has already turned it into ``ss``.
     """
     if not any(ch in token for ch in _UMLAUT_ALIASES):
         return None
@@ -121,31 +122,43 @@ def _ascii_alias(token: str) -> str | None:
 
 
 def _split_compound(token: str) -> tuple[str, ...]:
-    """把复合词拆成词典中的成分；拆不动就返回空元组。
+    """Split a compound into its dictionary constituents; an empty tuple if it
+    cannot be split.
 
-    递归下降 + 回溯。贪心版本会在两处失败，而两处都不是罕见构词：
+    Recursive descent with backtracking. A greedy version fails on two cases,
+    and neither is a rare word-formation pattern:
 
-    - 连接语素的剥离必须**可回退**。``rufnummernmitnahme`` 在 ``ruf`` 之后剩下
-      ``nummernmitnahme``，贪心地把 ``n`` 当连接语素吃掉，而它是 ``nummer`` 的首
-      字母。所以每个位置都要同时尝试「剥」与「不剥」两条路。
-    - **最后一个成分可以带屈折后缀**。``servicezeiten`` = service + zeit + en。
+    - Stripping a linking morpheme must be **reversible**. ``rufnummernmitnahme``
+      leaves ``nummernmitnahme`` after ``ruf``, and a greedy strip would eat
+      the ``n`` as a linking morpheme — except it is the first letter of
+      ``nummer``. So every position has to try both "strip" and "don't strip".
+    - **The last constituent may carry an inflectional suffix**.
+      ``servicezeiten`` = service + zeit + en.
 
-    仍然是全有或全无：只有当整个词都被消耗完时才返回成分，否则返回空元组。部分
-    匹配（一个词典词加一段残渣）会产生错误召回，比不拆更糟。
+    Still all-or-nothing: constituents are returned only when the whole word
+    has been consumed, otherwise an empty tuple. A partial match (one
+    dictionary word plus leftover residue) produces false recall, which is
+    worse than not splitting at all.
     """
     parts = _decompose(token)
     return parts if parts is not None and len(parts) > 1 else ()
 
 
-# 缓存 _decompose 以阻止回溯随词典增长而指数爆炸。有界是因为 tokenize 也在长期
-# 运行的聊天进程中的用户查询上执行，而非仅在索引时的固定语料。无界缓存会随用户
-# 输入无限增长。每个分解的工作集远小于 2048，所以驱逐不会影响指数阻止的效果。
+# _decompose is cached to stop backtracking from exploding exponentially as
+# the lexicon grows. Bounded because tokenize also runs on user queries in a
+# long-running chat process, not only on the fixed corpus at index time — an
+# unbounded cache would grow without limit against user input. Each
+# decomposition's working set is far smaller than 2048, so eviction never
+# undermines the exponential-blowup guard.
 @lru_cache(maxsize=2048)
 def _decompose(rest: str) -> tuple[str, ...] | None:
-    """把 ``rest`` 完整拆成词典成分；拆不完返回 ``None``。
+    """Split ``rest`` completely into dictionary constituents; ``None`` if it
+    cannot be fully split.
 
-    ``None`` 与 ``()`` 的区别是有意义的：``()`` 表示「空串已成功消耗完」，是递归的
-    成功基例；``None`` 表示「这条路走不通」，触发回溯。
+    The distinction between ``None`` and ``()`` carries meaning: ``()`` means
+    "the empty string has been successfully consumed", the recursion's
+    success base case; ``None`` means "this path doesn't work", which
+    triggers backtracking.
     """
     if not rest:
         return ()
@@ -170,10 +183,12 @@ def _decompose(rest: str) -> tuple[str, ...] | None:
 
 
 def _stem_alias(token: str) -> str | None:
-    """剥词形后缀，**仅当结果命中词典**时才产出。
+    """Strip an inflectional suffix, producing a result **only when it hits the
+    lexicon**.
 
-    长度规则（"剩余 >= 4 字符就剥"）会造出 ``Nutzer`` -> ``nutz`` 这种假词干。
-    词典验证把「能不能剥」变成一个有据可查的问题。
+    A length rule ("strip if at least 4 characters remain") would manufacture
+    false stems like ``Nutzer`` -> ``nutz``. Dictionary verification turns
+    "can this be stripped" into a question with a documented answer.
     """
     if token in LEXICON:
         return None
@@ -335,7 +350,8 @@ class GermanRules:
         return tuple(sorted((f for f in found if f.kind in kinds), key=lambda e: e.span))
 
     def tokenize(self, text: str) -> tuple[str, ...]:
-        """六步流水线，全程叠加不替换。见 de_lexicon 的模块文档。"""
+        """Six-step pipeline, additive throughout, never replacing. See the
+        module docstring of de_lexicon."""
         out: list[str] = []
         for surface in surface_tokens(text):
             out.extend(_expand(surface.casefold()))
@@ -343,27 +359,31 @@ class GermanRules:
 
 
 def _expand(folded: str) -> tuple[str, ...]:
-    """一个已 casefold 的表面词元展开成它的全部检索词元。
+    """Expand one already-casefolded surface token into all of its retrieval
+    tokens.
 
-    顺序不能重排：成分要先拆完，别名才能施加于**全部**产出（闭包）。只对表面词
-    加别名的话，查询 ``Kuendigung`` 命中不了只写了 ``Kündigungsfrist`` 的文档。
+    The order cannot be reshuffled: constituents must be fully split before
+    aliasing is applied to **all** of the output (closure). Aliasing only the
+    surface word would leave a query for ``Kuendigung`` unable to match a
+    document that only ever writes ``Kündigungsfrist``.
 
-    去重发生在**单个表面词元内部**，所以文档中真实重复的词仍然重复计入 TF。
+    Deduplication happens **within a single surface token**, so a word that
+    genuinely repeats in the document is still counted repeatedly toward TF.
     """
     produced: list[str] = []
 
-    # 3. 连字符成分
+    # 3. Hyphenated constituents
     base = list(split_hyphenated(folded))
-    # 4. 复合词成分
+    # 4. Compound constituents
     for token in tuple(base):
         base.extend(_split_compound(token))
     produced.extend(base)
-    # 5. 别名闭包 —— 施加于以上全部产出
+    # 5. Alias closure — applied to everything produced above
     for token in tuple(produced):
         alias = _ascii_alias(token)
         if alias is not None:
             produced.append(alias)
-    # 6. 词典验证的词干别名
+    # 6. Dictionary-verified stem aliases
     for token in tuple(produced):
         stem = _stem_alias(token)
         if stem is not None:

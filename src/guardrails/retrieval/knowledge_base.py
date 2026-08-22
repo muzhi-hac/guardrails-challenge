@@ -1,11 +1,14 @@
-"""按 locale 组织的知识库。
+"""The knowledge base, organised by locale.
 
-``k`` 不是 profile 的一部分。它确实是 profile 形状的东西 —— 不同客户可能想要不同的
-上下文预算 —— 但现在只有一个取值需求，为它引入一整层配置面和 ``locale/`` 里被否掉的
-「子检查级 mode 配置」是同一类过度设计。
+``k`` is not part of the profile. It genuinely is profile-shaped —
+different clients might want different context budgets — but right now
+there is only one value anyone needs, and introducing a whole configuration
+surface for it would be the same kind of over-engineering as the
+"sub-check-level mode configuration" that was rejected in ``locale/``.
 
-**升级触发条件**：出现第二个客户需要不同的上下文预算，或者评测显示 k 是溯源守卫
-假阳性的主因。
+**Upgrade trigger**: a second client needs a different context budget, or
+evaluation shows ``k`` is the leading cause of grounding-guard false
+positives.
 """
 
 from __future__ import annotations

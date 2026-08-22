@@ -1,11 +1,15 @@
-"""德语检索的领域词典。
+"""The domain lexicon for German retrieval.
 
-这个模块是德语分词的核心资产：同一份词表既驱动复合词分解，也验证词干化。把两者
-绑在同一份数据上是有意的 —— 一个能被拆出来的成分，才是一个可以被剥后缀剥出来的
-词干；两套词表会各自漂移。
+This module is the central asset of German tokenization: the same word list
+both drives compound decomposition and verifies stemming. Tying the two to
+one shared piece of data is deliberate — a constituent that can be split out
+is exactly the same thing as a stem that can be validated after stripping a
+suffix; two separate word lists would drift apart from each other.
 
-覆盖范围是当前语料。扩语料必须同步扩词典，否则新复合词退化为整词匹配（失效方向
-保守，不会产生错误召回，但 recall 会掉）。
+Coverage matches the current corpus. Extending the corpus requires extending
+the lexicon in step, or a new compound degrades to whole-word matching (a
+conservative failure direction — it costs recall, it does not produce false
+positives).
 """
 
 from __future__ import annotations
@@ -14,25 +18,27 @@ from typing import Final
 
 LEXICON: Final[frozenset[str]] = frozenset(
     {
-        # 合同与解约
+        # Contract and cancellation
         "vertrag", "kündigung", "frist", "laufzeit", "mindest", "sonder",
         "widerruf", "recht", "partner", "wechsel", "termin", "verlängerung",
-        # 资费与账务
+        # Tariff and billing
         "tarif", "preis", "betrag", "rechnung", "zahlung", "art", "gebühr",
         "konto", "lastschrift", "verzug", "monat", "jahr", "woche", "tag",
-        # 产品
+        # Product
         "mobilfunk", "daten", "volumen", "netz", "abdeckung", "karte",
         "roaming", "gerät", "finanzierung", "anschluss", "nummer", "mitnahme",
         "ruf", "drosselung", "geschwindigkeit",
-        # 服务
+        # Service
         "service", "zeit", "kunde", "störung", "meldung", "entstörung", "entstör",
         "umzug", "auskunft", "schutz", "adresse",
     }
 )
 
 LINKING_MORPHEMES: Final[tuple[str, ...]] = ("es", "en", "s", "n")
-"""连接语素，按长度降序尝试：Kündigung|s|frist、Rufnummer|n|mitnahme。"""
+"""Linking morphemes, tried longest first: Kündigung|s|frist, Rufnummer|n|mitnahme."""
 
 INFLECTION_SUFFIXES: Final[tuple[str, ...]] = ("en", "es", "er", "e", "n", "s")
-"""词形后缀。用于 _stem_alias（剥孤立词的屈折）与 _decompose（复合词**最后一个成分**可带屈折）。
-两处都要求剥离结果**必须命中 LEXICON** 才产出。"""
+"""Inflectional suffixes. Used by ``_stem_alias`` (stripping inflection from a
+standalone word) and by ``_decompose`` (the **last constituent** of a
+compound may carry inflection). Both sites require that the stripped result
+**hit the LEXICON** before it is produced."""

@@ -1,4 +1,4 @@
-"""模型调用层。"""
+"""The model-calling layer."""
 
 from __future__ import annotations
 

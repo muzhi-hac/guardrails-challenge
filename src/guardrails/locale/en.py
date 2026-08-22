@@ -105,11 +105,12 @@ _CURRENCY_CODES: dict[str, str] = {"£": "GBP", "gbp": "GBP", "€": "EUR", "eur
 
 
 def _currency_code(marker: str) -> str:
-    """把匹配到的货币标记映射成 ISO 代码。
+    """Map a matched currency marker to its ISO code.
 
-    货币其实是 *region* 形状的知识，不是 *language* 形状的 —— 同一个英语渠道可以卖
-    EUR 也可以卖 GBP。正确归属是 Profile 未来的 ``region`` 字段；在它落地之前，这里
-    至少不能把币种硬编码。
+    Currency is really *region*-shaped knowledge, not *language*-shaped — the
+    same English channel might sell in EUR or in GBP. The correct home for
+    this is a future ``region`` field on ``Profile``; until that lands, the
+    least this function can do is not hard-code the currency.
     """
     return _CURRENCY_CODES[marker.casefold()]
 
@@ -236,7 +237,8 @@ class EnglishRules:
         return tuple(sorted((f for f in found if f.kind in kinds), key=lambda e: e.span))
 
     def tokenize(self, text: str) -> tuple[str, ...]:
-        """英语没有德语那种复合词，平凡分词就是最终实现。"""
+        """English has no compounding of the kind German has; the trivial
+        tokenizer is the final implementation."""
         return simple_tokenize(text)
 
 
