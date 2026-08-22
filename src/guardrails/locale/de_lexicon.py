@@ -25,7 +25,7 @@ LEXICON: Final[frozenset[str]] = frozenset(
         "roaming", "gerät", "finanzierung", "anschluss", "nummer", "mitnahme",
         "ruf", "drosselung", "geschwindigkeit",
         # 服务
-        "service", "zeit", "kunde", "störung", "meldung", "entstörung",
+        "service", "zeit", "kunde", "störung", "meldung", "entstörung", "entstör",
         "umzug", "auskunft", "schutz", "adresse",
     }
 )

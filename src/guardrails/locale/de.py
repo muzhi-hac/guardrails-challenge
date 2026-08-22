@@ -122,27 +122,46 @@ def _ascii_alias(token: str) -> str | None:
 def _split_compound(token: str) -> tuple[str, ...]:
     """把复合词拆成词典中的成分；拆不动就返回空元组。
 
-    贪心最长匹配，从左到右。每一步允许吃掉一个连接语素。要求**全部**成分都命中
-    词典 —— 部分匹配（拆出一个词典词加一段残渣）会产生错误召回，比不拆更糟。
+    递归下降 + 回溯。贪心版本会在两处失败，而两处都不是罕见构词：
+
+    - 连接语素的剥离必须**可回退**。``rufnummernmitnahme`` 在 ``ruf`` 之后剩下
+      ``nummernmitnahme``，贪心地把 ``n`` 当连接语素吃掉，而它是 ``nummer`` 的首
+      字母。所以每个位置都要同时尝试「剥」与「不剥」两条路。
+    - **最后一个成分可以带屈折后缀**。``servicezeiten`` = service + zeit + en。
+
+    仍然是全有或全无：只有当整个词都被消耗完时才返回成分，否则返回空元组。部分
+    匹配（一个词典词加一段残渣）会产生错误召回，比不拆更糟。
     """
-    parts: list[str] = []
-    rest = token
-    while rest:
-        for end in range(len(rest), 2, -1):
-            head = rest[:end]
-            if head not in LEXICON:
+    parts = _decompose(token)
+    return parts if parts is not None and len(parts) > 1 else ()
+
+
+def _decompose(rest: str) -> tuple[str, ...] | None:
+    """把 ``rest`` 完整拆成词典成分；拆不完返回 ``None``。
+
+    ``None`` 与 ``()`` 的区别是有意义的：``()`` 表示「空串已成功消耗完」，是递归的
+    成功基例；``None`` 表示「这条路走不通」，触发回溯。
+    """
+    if not rest:
+        return ()
+    for end in range(len(rest), 2, -1):
+        head = rest[:end]
+        if head not in LEXICON:
+            continue
+        tail = rest[end:]
+        sub = _decompose(tail)
+        if sub is not None:
+            return (head, *sub)
+        for morpheme in LINKING_MORPHEMES:
+            if not tail.startswith(morpheme):
                 continue
-            parts.append(head)
-            tail = rest[end:]
-            for morpheme in LINKING_MORPHEMES:
-                if tail.startswith(morpheme) and tail[len(morpheme):]:
-                    tail = tail[len(morpheme):]
-                    break
-            rest = tail
-            break
-        else:
-            return ()
-    return tuple(parts) if len(parts) > 1 else ()
+            sub = _decompose(tail[len(morpheme):])
+            if sub is not None:
+                return (head, *sub)
+    for suffix in INFLECTION_SUFFIXES:
+        if rest.endswith(suffix) and rest[: -len(suffix)] in LEXICON:
+            return (rest[: -len(suffix)],)
+    return None
 
 
 def _stem_alias(token: str) -> str | None:
