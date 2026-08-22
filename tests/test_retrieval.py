@@ -164,5 +164,17 @@ def test_unknown_locale_names_what_is_available(kb):
         kb.for_locale(Fake())  # type: ignore[arg-type]
 
 
+def test_none_locale_raises_keyerror(kb):
+    """None 是实际的错误参数 —— 一个从未填充的 profile 字段。"""
+    with pytest.raises(KeyError, match="de-DE"):
+        kb.for_locale(None)  # type: ignore[arg-type]
+
+
+def test_unhashable_locale_raises_keyerror(kb):
+    """不可哈希的参数也必须产生信息性的 KeyError。"""
+    with pytest.raises(KeyError, match="de-DE"):
+        kb.for_locale(['not', 'hashable'])  # type: ignore[arg-type]
+
+
 def test_empty_query_returns_nothing(kb):
     assert kb.for_locale(Locale.DE_DE).search("", k=5) == ()

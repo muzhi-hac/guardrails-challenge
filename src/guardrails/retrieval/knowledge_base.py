@@ -39,10 +39,11 @@ class KnowledgeBase:
     def for_locale(self, locale: Locale) -> Retriever:
         try:
             return self._retrievers[locale]
-        except KeyError as exc:
+        except (KeyError, TypeError) as exc:
             known = ", ".join(sorted(loc.value for loc in self._retrievers))
+            name = getattr(locale, "value", locale)
             raise KeyError(
-                f"no knowledge base for {locale.value!r}; have: {known}"
+                f"no knowledge base for {name!r}; have: {known}"
             ) from exc
 
     @property

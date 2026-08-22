@@ -57,6 +57,12 @@ class Bm25Retriever:
         ranked = sorted(
             (Scored(chunk, float(score))
              for chunk, score in zip(self._chunks, scores, strict=True)
+             # 过滤器：只保留查询词触及的 chunk。初看 BM25 的负 idf 公式
+             # ``ln((N-df+0.5)/(df+0.5))`` 会认为一个词在语料半数以上文档出现时
+             # idf 为负，分数归零。但 BM25Okapi 的实现把负 idf 压到 epsilon 倍
+             # 平均 idf（正数），所以这个语料上常见德语虚词如 "und der" 查询
+             # 照样返回排序结果。过滤器因此只拦截查询词完全不在 chunk，或
+             # 整个查询超出词表的情况。这一点已在语料上实证验证，而非假设。
              if score > 0.0),
             key=lambda s: (-s.score, s.item.chunk_id),
         )
