@@ -1,6 +1,14 @@
 # Guardrails Challenge
 
-> **Status: scaffold.** Structure is in place; implementation and documentation are in progress.
+> **Status: chatbot with measured retrieval, no guard pipeline wired in yet.**
+> The knowledge base, a German-aware BM25 retriever, a multi-turn chatbot, a
+> real Anthropic-backed completion layer, a run-scoped JSONL trace writer, and
+> a CLI entry point all exist and are tested (`298 passed, 6 skipped`).
+> Retrieval recall is measured, not assumed — see the "已知局限" (known
+> limitations) section of [DESIGN.md](DESIGN.md). What is **not** here yet: the four
+> guards themselves and the orchestrator that would route their verdicts to an
+> action. `python -m chatbot` talks straight to the model over the retrieved
+> context with no guard in the loop.
 
 A guardrails system for a multi-turn customer-service assistant in the telecom
 domain, covering four failure modes:
@@ -25,7 +33,17 @@ evaluation fall back to recorded responses.
 
 ## Usage
 
-_To be filled in once the entry points exist._
+```bash
+export ANTHROPIC_API_KEY=...          # required
+export ANTHROPIC_BASE_URL=...         # optional, for a third-party relay endpoint
+PYTHONPATH=src ./.venv/bin/python -m chatbot --profile telco_de --question "Was kostet Tarif M?"
+```
+
+Omit `--question` to enter a REPL. Each run leaves one trace at
+`runs/<run_id>.jsonl`.
+
+The guard layer is not wired into this entry point yet — see the roadmap in
+DESIGN.md.
 
 ## Repository layout
 

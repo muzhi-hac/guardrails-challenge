@@ -159,3 +159,71 @@ class Chatbot:
 def _hash(system: str, messages: Sequence[Turn]) -> str:
     payload = system + "\x00" + "\x00".join(f"{t.role}:{t.content}" for t in messages)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:32]
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    import argparse
+    import asyncio
+    from pathlib import Path
+
+    from guardrails.provider.anthropic_client import AnthropicCompletion
+    from guardrails.retrieval.knowledge_base import KnowledgeBase
+    from guardrails.types import Mode
+    from utils import TraceWriter, load_profile, new_run_id
+
+    root = Path(__file__).resolve().parents[1]
+    parser = argparse.ArgumentParser(description="Telecom assistant, no guardrails yet.")
+    parser.add_argument("--profile", default="telco_de")
+    parser.add_argument("--mode", default="chat", choices=[m.value for m in Mode])
+    parser.add_argument("--question", help="一次性提问；省略则进入 REPL")
+    args = parser.parse_args(argv)
+
+    profile = load_profile(root / "profiles" / f"{args.profile}.yaml").resolve(
+        Mode(args.mode)
+    )
+    kb = KnowledgeBase.load(root / "kb")
+    bot = Chatbot(
+        kb.for_locale(profile.locale),
+        AnthropicCompletion(model=profile.models.chat),
+        profile,
+    )
+    trace = TraceWriter(root / "runs", new_run_id())
+
+    async def ask(question: str) -> None:
+        try:
+            turn = await bot.reply(question, ())
+        except Exception as exc:  # noqa: BLE001 — 传异常本身，类型名由 TraceWriter 提取
+            trace.write({"profile": profile.name, "mode": profile.mode.value,
+                         "query": question}, error=exc)
+            raise
+        trace.write({
+            "profile": profile.name,
+            "mode": profile.mode.value,
+            "query": question,
+            "retrieved": [{"chunk_id": s.item.chunk_id, "score": round(s.score, 4)}
+                          for s in turn.retrieved],
+            "model": turn.completion.model,
+            "input_tokens": turn.completion.input_tokens,
+            "output_tokens": turn.completion.output_tokens,
+            "latency_ms": round(turn.completion.latency_ms, 2),
+            "prompt_hash": turn.prompt_hash,
+        })   # error_type 由 TraceWriter 拥有，成功路径自动写入 None
+        print(turn.reply)
+
+    if args.question:
+        asyncio.run(ask(args.question))
+    else:
+        while True:
+            try:
+                line = input("> ").strip()
+            except EOFError:
+                break
+            if not line:
+                break
+            asyncio.run(ask(line))
+    print(f"\ntrace: {trace.path}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
