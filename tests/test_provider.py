@@ -59,7 +59,8 @@ async def test_replays_recorded_response(tmp_path: Path):
     store = tmp_path / "completions.json"
     store.write_text(json.dumps({
         key: {"text": "Tarif M kostet 29,99 EUR pro Monat.",
-              "model": "m", "input_tokens": 42, "output_tokens": 13}
+              "model": "m", "input_tokens": 42, "output_tokens": 13,
+              "latency_ms": 842.7}
     }), encoding="utf-8")
 
     provider = FixtureCompletion(store, model="m")
@@ -68,6 +69,7 @@ async def test_replays_recorded_response(tmp_path: Path):
     assert result.text == "Tarif M kostet 29,99 EUR pro Monat."
     assert result.input_tokens == 42
     assert result.output_tokens == 13
+    assert result.latency_ms == 842.7
 
 
 async def test_miss_raises_rather_than_falling_back(tmp_path: Path):
@@ -84,8 +86,46 @@ async def test_different_max_tokens_does_not_hit_the_same_recording(tmp_path: Pa
     key = fixture_key(system=SYSTEM, messages=MESSAGES, max_tokens=512, model="m")
     store = tmp_path / "completions.json"
     store.write_text(json.dumps({key: {"text": "x", "model": "m",
-                                       "input_tokens": 1, "output_tokens": 1}}),
+                                       "input_tokens": 1, "output_tokens": 1,
+                                       "latency_ms": 1.0}}),
                      encoding="utf-8")
     provider = FixtureCompletion(store, model="m")
     with pytest.raises(KeyError):
         await provider.complete(system=SYSTEM, messages=MESSAGES, max_tokens=1024)
+
+
+async def test_malformed_record_missing_field_names_file_key_and_field(tmp_path: Path):
+    """字段格式检查器测试之一：缺字段的错误信息要能定位问题，而不是裸 KeyError。"""
+    key = fixture_key(system=SYSTEM, messages=MESSAGES, max_tokens=512, model="m")
+    store = tmp_path / "completions.json"
+    store.write_text(json.dumps({
+        key: {"model": "m", "input_tokens": 1, "output_tokens": 1, "latency_ms": 1.0}
+    }), encoding="utf-8")
+
+    provider = FixtureCompletion(store, model="m")
+    with pytest.raises(ValueError) as excinfo:
+        await provider.complete(system=SYSTEM, messages=MESSAGES, max_tokens=512)
+
+    message = str(excinfo.value)
+    assert str(store) in message
+    assert key in message
+    assert "text" in message
+
+
+async def test_non_integer_token_count_is_rejected_not_coerced(tmp_path: Path):
+    """`int("42")` 会成功，从而掩盖 fixture 编写错误 —— 拒绝而不是强转。"""
+    key = fixture_key(system=SYSTEM, messages=MESSAGES, max_tokens=512, model="m")
+    store = tmp_path / "completions.json"
+    store.write_text(json.dumps({
+        key: {"text": "x", "model": "m", "input_tokens": "42",
+              "output_tokens": 1, "latency_ms": 1.0}
+    }), encoding="utf-8")
+
+    provider = FixtureCompletion(store, model="m")
+    with pytest.raises(ValueError) as excinfo:
+        await provider.complete(system=SYSTEM, messages=MESSAGES, max_tokens=512)
+
+    message = str(excinfo.value)
+    assert str(store) in message
+    assert key in message
+    assert "input_tokens" in message

@@ -39,7 +39,10 @@ class CompletionResult:
     model: str
     input_tokens: int
     output_tokens: int
-    latency_ms: float = 0.0
+    latency_ms: float
+    """壁钟延迟（毫秒）。必须提供 —— 没有默认值。默认值会让"忘记测量"和"合法地快"
+    这两种情况在类型检查器、测试和 trace 阅读者眼里都无法区分，而 trace 里的延迟
+    数字一旦失真就是在骗看 trace 的人。"""
 
 
 class Completion(Protocol):
