@@ -88,15 +88,19 @@ def _atoms(body: str) -> list[_Atom]:
 def chunk_document(doc: Document, *, max_words: int = 180) -> tuple[Chunk, ...]:
     sections = _sections(doc.body)
     seen: dict[str, int] = {}
+    used: set[str] = set()
     chunks: list[Chunk] = []
     for n, (section_title, section_body) in enumerate(sections):
         # 空标题（首标题前的正文，见 _sections）落到位置化的 abschnitt-{n}；
         # 同一文档内重复出现的 slug（不管是不是靠 fallback 得来的）从第二次起
         # 追加 -2、-3……第一次出现保持不加后缀，语料里现有的 chunk_id 因此不变。
-        slug = slugify(section_title) or f"abschnitt-{n}"
-        seen[slug] = seen.get(slug, 0) + 1
-        if seen[slug] > 1:
-            slug = f"{slug}-{seen[slug]}"
+        base = slugify(section_title) or f"abschnitt-{n}"
+        seen[base] = seen.get(base, 0) + 1
+        slug = base if seen[base] == 1 else f"{base}-{seen[base]}"
+        while slug in used:
+            seen[base] += 1
+            slug = f"{base}-{seen[base]}"
+        used.add(slug)
         base_id = f"{doc.locale.value}:{doc.doc_id}#{slug}"
         heading = f"## {section_title}" if section_title else ""
         whole = f"{heading}\n\n{section_body}".strip()

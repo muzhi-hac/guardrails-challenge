@@ -129,6 +129,23 @@ def test_duplicate_section_titles_get_distinct_chunk_ids():
     assert ids[1] == "de-DE:dup#hinweise-2"
 
 
+def test_suffix_collision_does_not_produce_duplicates():
+    """When a base slug appears twice and then its legitimate suffixed form appears,
+    all three must be distinct: avoid collision where the third heading's natural slug
+    matches the second heading's disambiguation suffix."""
+    body = "## Hinweise\n\nA kurz.\n\n## Hinweise\n\nB kurz.\n\n## Hinweise 2\n\nC kurz."
+    doc = Document(
+        doc_id="x", locale=Locale.DE_DE, title="T", version="2026-01-01",
+        source_path="p.md", body=body,
+    )
+    ids = [c.chunk_id for c in chunk_document(doc)]
+    assert len(ids) == 3
+    assert len(ids) == len(set(ids)), f"Collision detected: {ids}"
+    assert ids[0] == "de-DE:x#hinweise"
+    assert ids[1] == "de-DE:x#hinweise-2"
+    assert ids[2] == "de-DE:x#hinweise-2-2"  # hinweise-2 was taken, so it becomes hinweise-2-2
+
+
 def test_headings_differing_only_in_punctuation_get_distinct_chunk_ids():
     body = "## Preise & Tarife\n\nText A kurz.\n\n## Preise - Tarife\n\nText B kurz."
     doc = Document(
