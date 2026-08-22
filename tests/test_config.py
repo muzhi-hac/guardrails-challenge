@@ -45,6 +45,15 @@ class TestShippedProfilesLoad:
         assert "address_form" not in de.guards.persona.severity_overrides
         assert en.guards.persona.severity_overrides["address_form"] is Severity.LOW
 
+    def test_the_same_client_shares_one_brand_across_channels(self):
+        """telco_de and telco_en are one client on two channels, so the name
+        the assistant gives a customer must be identical even though the
+        profile identifiers differ."""
+        de = load_profile(PROFILES / "telco_de.yaml")
+        en = load_profile(PROFILES / "telco_en.yaml")
+        assert de.name != en.name
+        assert de.brand_name == en.brand_name
+
     def test_second_client_differs_only_in_configuration(self):
         """The multi-tenancy claim, asserted rather than described."""
         telco = load_profile(PROFILES / "telco_de.yaml").resolve(Mode.CHAT)

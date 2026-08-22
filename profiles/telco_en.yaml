@@ -10,6 +10,7 @@
 # `low` here and left at its default in the German profile.
 
 name: telco_en
+brand_name: TeleNova
 locale: en-GB
 
 models:

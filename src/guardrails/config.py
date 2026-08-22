@@ -261,6 +261,7 @@ class ResolvedProfile(ConfigModel):
     """A profile flattened for one mode. Nothing here needs further resolution."""
 
     name: str
+    brand_name: str
     locale: Locale
     mode: Mode
     models: ModelConfig
@@ -285,6 +286,16 @@ class Profile(ConfigModel):
     """One client deployment, as written in YAML."""
 
     name: str
+    """The profile's identifier: file naming, trace records, lookups by
+    :func:`load_profile`'s caller. Never shown to a customer."""
+
+    brand_name: str
+    """What the assistant calls itself to a customer, e.g. in the system
+    prompt. Distinct from ``name`` on purpose: ``name`` is ``telco_de``, an
+    identifier a customer must never see; ``brand_name`` is the client's
+    actual brand. Two profiles for the same client on different channels
+    (``telco_de`` / ``telco_en``) share one ``brand_name``."""
+
     locale: Locale
     models: ModelConfig = Field(default_factory=ModelConfig)
     routing: Mapping[SeverityName, Action]
@@ -340,6 +351,7 @@ class Profile(ConfigModel):
 
         return ResolvedProfile(
             name=self.name,
+            brand_name=self.brand_name,
             locale=self.locale,
             mode=mode,
             models=self.models,

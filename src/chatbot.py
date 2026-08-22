@@ -85,7 +85,7 @@ class Chatbot:
         tone = ", ".join(persona.tone)
         forbidden = ", ".join(persona.forbidden_phrases)
         lines = [
-            f"Sie sind der Kundenservice-Assistent von {self._profile.name}.",
+            f"Sie sind der Kundenservice-Assistent von {self._profile.brand_name}.",
             register,
         ]
         if tone:

@@ -77,6 +77,15 @@ async def test_system_prompt_requests_the_persona(bot):
     assert "Sie" in spy.system
 
 
+async def test_system_prompt_uses_brand_name_not_the_identifier(bot):
+    """回归测试：提示词曾经泄露 profile.name（如 'telco_de'），而不是品牌名。"""
+    spy, kb, profile = bot
+    chatbot = Chatbot(kb.for_locale(Locale.DE_DE), spy, profile)
+    await chatbot.reply("Wer sind Sie?", ())
+    assert profile.brand_name in spy.system
+    assert profile.name not in spy.system
+
+
 async def test_history_is_truncated_to_its_own_window(bot):
     """HISTORY_TURNS 不复用 profile 的 cross_turn_window（默认 5）。"""
     spy, kb, profile = bot

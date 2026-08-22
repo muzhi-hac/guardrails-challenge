@@ -13,6 +13,7 @@
 #     profile to resolve for voice raises rather than silently falling back.
 
 name: gesundheit_de
+brand_name: VitaSecura
 locale: de-DE
 
 models:
