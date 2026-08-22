@@ -189,9 +189,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     trace = TraceWriter(root / "runs", new_run_id())
 
-    async def ask(question: str) -> None:
+    async def ask(question: str, history: tuple[Turn, ...]) -> ChatTurn:
         try:
-            turn = await bot.reply(question, ())
+            turn = await bot.reply(question, history)
         except Exception as exc:  # noqa: BLE001 — 传异常本身，类型名由 TraceWriter 提取
             trace.write({"profile": profile.name, "mode": profile.mode.value,
                          "query": question}, error=exc)
@@ -206,13 +206,22 @@ def main(argv: Sequence[str] | None = None) -> int:
             "input_tokens": turn.completion.input_tokens,
             "output_tokens": turn.completion.output_tokens,
             "latency_ms": round(turn.completion.latency_ms, 2),
+            "stop_reason": turn.completion.stop_reason,
             "prompt_hash": turn.prompt_hash,
         })   # error_type 由 TraceWriter 拥有，成功路径自动写入 None
         print(turn.reply)
+        return turn
 
     if args.question:
-        asyncio.run(ask(args.question))
+        # One-shot path: intentionally single-turn, no history to accumulate.
+        asyncio.run(ask(args.question, ()))
     else:
+        # REPL path: this is the one entry point a reader actually runs, and
+        # the project's headline claim is a *multi-turn* assistant — so each
+        # successful exchange is appended to a running history and handed to
+        # the next call. A turn that raised is not appended: bot.reply()
+        # never returned a reply for it, so there is nothing sound to record.
+        history: list[Turn] = []
         while True:
             try:
                 line = input("> ").strip()
@@ -220,7 +229,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 break
             if not line:
                 break
-            asyncio.run(ask(line))
+            turn = asyncio.run(ask(line, tuple(history)))
+            history.append(Turn("user", line))
+            history.append(Turn("assistant", turn.reply))
     print(f"\ntrace: {trace.path}")
     return 0
 
