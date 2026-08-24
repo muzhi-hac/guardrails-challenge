@@ -1,22 +1,46 @@
-"""Injection guard: does this turn try to make the assistant obey someone
-other than the operator?
+"""Injection guard: does the user's own turn try to make the assistant obey
+someone other than the operator?
 
-Runs at :data:`~guardrails.types.Stage.RETRIEVAL`, not
-:data:`~guardrails.types.Stage.INPUT`. That placement is deliberate, not a
-default. The orchestrator's pipeline is INPUT -> RETRIEVAL -> OUTPUT, and
-this is the one guard that has to see two different channels at once: the
-user's own turn (:attr:`~guardrails.guards.base.GuardContext.user_message`)
-and the documents retrieval just returned
-(:attr:`~guardrails.guards.base.GuardContext.retrieved`). Both channels can
-carry an injection attempt — a customer typing it directly, or a poisoned
-knowledge-base chunk carrying it in through the corpus — and they are the
-same attack surface from the assistant's point of view: text it did not
-author, asking to be treated as an instruction. Splitting the check across
-an INPUT-stage guard and a separate RETRIEVAL-stage guard would mean writing
-the override and role-play detectors twice, once per stage, and would still
-run before the reply exists, so nothing about tier-0 cost is bought by
-splitting it. One guard, one stage, both channels, and it still runs before
-the expensive model call — RETRIEVAL is strictly before OUTPUT.
+Runs at :data:`~guardrails.types.Stage.INPUT`, the first stage in the
+pipeline. That placement is now possible precisely because this guard covers
+one channel, not two: the user's own turn
+(:attr:`~guardrails.guards.base.GuardContext.user_message` and
+:attr:`~guardrails.guards.base.GuardContext.history`). It used to also scan
+retrieved documents and run at :data:`~guardrails.types.Stage.RETRIEVAL`
+because a guard has exactly one stage and the document check needed
+retrieval's output; that channel now lives in
+:class:`~guardrails.guards.document.DocumentGuard`, which runs at RETRIEVAL
+for the same reason. See that module's docstring for why splitting was worth
+duplicating nothing: the two channels differ in kind, not just in stage.
+
+**Different threat, different trust assumption.** A user's own message is
+adversarial by default -- every customer service bot has to assume a
+non-trivial fraction of its traffic is someone probing for a jailbreak. A
+retrieved document is trusted infrastructure: the knowledge base is not
+re-authored by an adversary on every turn, so a construction that looks like
+an attack there means the corpus itself is compromised or mis-authored, a
+different finding with a different investigation path. Running this guard at
+INPUT means an adversarial user turn is rejected before retrieval is even
+attempted -- strictly earlier than RETRIEVAL, and the wasted retrieval call
+is not just latency, it is a small amplification vector for whoever is
+sending the probes.
+
+**Why the false-positive patterns are anchored on the imperative
+construction, not on isolated keywords.** A telecom customer legitimately
+writes ``System``, ``Rolle``, ``ab jetzt`` and ``act as`` in ordinary German
+and English sentences about tariffs, complaints and error messages. Every
+pattern below requires the *verb tightly followed by its object* — the
+override patterns require an imperative directed at instructions/rules
+(``ignoriere ... Anweisungen``, not just ``ignorieren`` anywhere near
+``vorherige``), and the role-play patterns require the reassignment verb
+immediately followed by the identity marker (``du bist jetzt ein``, not
+``ab jetzt`` on its own). A keyword match would fire on ``Das System zeigt
+mir eine Fehlermeldung an`` or ``Welche Rolle spielt die Kündigungsfrist``;
+the construction match does not, because neither sentence contains the verb
+in the position the construction requires. See the docstrings on
+``_OVERRIDE_PATTERNS`` and ``_ROLE_PLAY_PATTERNS`` for the specific phrase
+each pattern targets and the specific benign sentence it was checked
+against.
 
 **Why this guard's patterns are multilingual, and why that is the opposite
 call from the grounding guard's.** The grounding guard was corrected to
@@ -41,22 +65,12 @@ does this language express a price"; this module answers "what does an
 attack look like," and an attack's language is the attacker's choice, not
 the deployment's.
 
-**Why the false-positive patterns are anchored on the imperative
-construction, not on isolated keywords.** A telecom customer legitimately
-writes ``System``, ``Rolle``, ``ab jetzt`` and ``act as`` in ordinary German
-and English sentences about tariffs, complaints and error messages. Every
-pattern below requires the *verb tightly followed by its object* — the
-override patterns require an imperative directed at instructions/rules
-(``ignoriere ... Anweisungen``, not just ``ignorieren`` anywhere near
-``vorherige``), and the role-play patterns require the reassignment verb
-immediately followed by the identity marker (``du bist jetzt ein``, not
-``ab jetzt`` on its own). A keyword match would fire on ``Das System zeigt
-mir eine Fehlermeldung an`` or ``Welche Rolle spielt die Kündigungsfrist``;
-the construction match does not, because neither sentence contains the verb
-in the position the construction requires. See the docstrings on
-``_OVERRIDE_PATTERNS`` and ``_ROLE_PLAY_PATTERNS`` for the specific phrase
-each pattern targets and the specific benign sentence it was checked
-against.
+``OVERRIDE_PATTERNS`` and ``ROLE_PLAY_PATTERNS`` are also imported by
+:mod:`guardrails.guards.document`, which reuses them verbatim to check a
+retrieved document for the same imperative constructions addressed at the
+assistant instead of at a reader. An instruction is an instruction whether it
+arrives via the user's turn or via a document; duplicating the pattern set
+would mean fixing every false positive twice.
 """
 
 from __future__ import annotations
@@ -70,7 +84,7 @@ from guardrails import findings
 from guardrails.guards.base import GuardContext, build_verdict
 from guardrails.types import Evidence, Severity, Stage, Verdict
 
-__all__ = ["InjectionGuard"]
+__all__ = ["InjectionGuard", "OVERRIDE_PATTERNS", "ROLE_PLAY_PATTERNS"]
 
 # -- instruction override ----------------------------------------------
 #
@@ -81,7 +95,7 @@ __all__ = ["InjectionGuard"]
 # the verb is followed by "meine vorherige Frage", and none of these patterns
 # accept "meine" or "Frage" where they require "alle"/"vorherigen" and an
 # instruction-noun (Anweisungen/Regeln/Vorgaben/Befehle).
-_OVERRIDE_PATTERNS: tuple[re.Pattern[str], ...] = (
+OVERRIDE_PATTERNS: tuple[re.Pattern[str], ...] = (
     # "Ignoriere/Ignorieren Sie alle vorherigen/bisherigen Anweisungen/Regeln/..."
     re.compile(
         r"ignorier\w*\s+(sie\s+)?(bitte\s+)?alle\s+(vorherigen|bisherigen)"
@@ -119,7 +133,7 @@ _OVERRIDE_PATTERNS: tuple[re.Pattern[str], ...] = (
 # "Can you act as my contact for this case?" fails because "act as" here is
 # not followed by "if" -- the only English role-play pattern using "act as"
 # requires the conditional framing the jailbreak template actually uses.
-_ROLE_PLAY_PATTERNS: tuple[re.Pattern[str], ...] = (
+ROLE_PLAY_PATTERNS: tuple[re.Pattern[str], ...] = (
     # "Du bist jetzt ein/eine/kein/nicht.../DAN ..."
     re.compile(r"du\s+bist\s+jetzt\s+(ein|eine|kein|nicht|dan)", re.IGNORECASE),
     # "Ab jetzt bist du ..."
@@ -138,19 +152,6 @@ _ROLE_PLAY_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"from\s+now\s+on\s+you\s+are", re.IGNORECASE),
     # "DAN mode"
     re.compile(r"dan\s+mode", re.IGNORECASE),
-)
-
-# -- document-channel markers ---------------------------------------------
-#
-# Applied only to retrieved documents (the indirect channel). A legitimate
-# knowledge-base chunk describes policy in the third person -- "Der Kunde
-# muss ..." -- it never opens a line with a bare "SYSTEM:" role marker or
-# tells the assistant what to relay to "the customer" in the second person;
-# only an attempt to smuggle a directive past the retrieval boundary does
-# that, so these two are safe to check with no further qualification.
-_DOCUMENT_MARKER_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"\bSYSTEM:\s"),
-    re.compile(r"you\s+must\s+tell\s+the\s+customer", re.IGNORECASE),
 )
 
 # -- encoded payload --------------------------------------------------------
@@ -194,27 +195,27 @@ def _looks_encoded(candidate: str) -> bool:
 
 
 def _matches_override_or_roleplay(text: str) -> bool:
-    return any(p.search(text) for p in (*_OVERRIDE_PATTERNS, *_ROLE_PLAY_PATTERNS))
+    return any(p.search(text) for p in (*OVERRIDE_PATTERNS, *ROLE_PLAY_PATTERNS))
 
 
 class InjectionGuard:
-    """Detects attempts to make the assistant discard its instructions or
-    its identity, arriving through the user's own turn, a retrieved
-    document, or an assembly spread across recent turns.
+    """Detects attempts, arriving through the user's own turn or an assembly
+    spread across recent turns, to make the assistant discard its
+    instructions or its identity.
 
     See the module docstring for why this runs at
-    :data:`~guardrails.types.Stage.RETRIEVAL` rather than
-    :data:`~guardrails.types.Stage.INPUT`, and why its patterns are
-    deliberately multilingual rather than following ``ctx.rules`` the way
-    the grounding guard does.
+    :data:`~guardrails.types.Stage.INPUT` rather than RETRIEVAL now, why the
+    document channel moved to :class:`~guardrails.guards.document.DocumentGuard`,
+    and why its patterns are deliberately multilingual rather than following
+    ``ctx.rules`` the way the grounding guard does.
     """
 
     name: ClassVar[str] = "injection"
-    stage: ClassVar[Stage] = Stage.RETRIEVAL
+    stage: ClassVar[Stage] = Stage.INPUT
     tier: ClassVar[int] = 0
 
     DEFAULT_SEVERITY: ClassVar[Mapping[str, Severity]] = {
-        # These four are high-confidence, high-consequence detections. The
+        # These are high-confidence, high-consequence detections. The
         # telco_de profile routes CRITICAL to safe_fallback specifically so
         # that an injected turn never reaches the user or a human agent's
         # queue verbatim (see profiles/telco_de.yaml's routing comment,
@@ -222,7 +223,6 @@ class InjectionGuard:
         # that is the routing these findings are meant to trigger.
         findings.INSTRUCTION_OVERRIDE: Severity.CRITICAL,
         findings.ROLE_PLAY_FRAMING: Severity.CRITICAL,
-        findings.DOCUMENT_INSTRUCTION: Severity.CRITICAL,
         findings.CROSS_TURN_ASSEMBLY: Severity.CRITICAL,
         # A long encoded run is a weaker signal on its own -- obfuscation
         # without a decoded payload proves intent to hide something, not
@@ -252,9 +252,6 @@ class InjectionGuard:
             *self._encoded_payload(text),
         ]
 
-        if config.scan_retrieved_documents:
-            evidence.extend(self._document_instructions(ctx.retrieved))
-
         evidence.extend(
             self._cross_turn_assembly(
                 text, ctx.history, config.cross_turn_window, current_turn_matched
@@ -280,7 +277,7 @@ class InjectionGuard:
                 detail=f"instruction-override phrase matched: {match.group(0)!r}",
                 span=match.span(),
             )
-            for pattern in _OVERRIDE_PATTERNS
+            for pattern in OVERRIDE_PATTERNS
             for match in pattern.finditer(text)
         ]
 
@@ -292,7 +289,7 @@ class InjectionGuard:
                 detail=f"role-reassignment phrase matched: {match.group(0)!r}",
                 span=match.span(),
             )
-            for pattern in _ROLE_PLAY_PATTERNS
+            for pattern in ROLE_PLAY_PATTERNS
             for match in pattern.finditer(text)
         ]
 
@@ -327,47 +324,6 @@ class InjectionGuard:
                 )
             )
 
-        return evidence
-
-    @staticmethod
-    def _document_instructions(retrieved: tuple[str, ...]) -> list[Evidence]:
-        """Imperative text inside a retrieved document that addresses the
-        assistant rather than describing policy to a reader.
-
-        The corpus is trusted infrastructure in this system's threat model --
-        retrieval is not re-checked by a human per turn -- so a chunk that
-        reuses an instruction-override or role-play construction, or opens
-        with a bare ``SYSTEM:`` marker, is either a compromised document or a
-        mis-authored one. Either way the turn should not proceed on it
-        silently; this is the guard-side half of the defence documented in
-        examples/example_runs.md #6, where the model-side half is the
-        per-turn nonce delimiter that keeps a document from being able to
-        close its own untrusted region early.
-
-        Reuses the override/role-play patterns rather than a second pattern
-        set: an instruction is an instruction whether it addresses "you" from
-        the user's turn or from a document, and duplicating every pattern
-        would mean fixing every false positive twice.
-        """
-        evidence: list[Evidence] = []
-        patterns = (*_OVERRIDE_PATTERNS, *_ROLE_PLAY_PATTERNS, *_DOCUMENT_MARKER_PATTERNS)
-        for document in retrieved:
-            for pattern in patterns:
-                for match in pattern.finditer(document):
-                    evidence.append(
-                        Evidence(
-                            kind=findings.DOCUMENT_INSTRUCTION,
-                            detail=(
-                                f"retrieved document addresses the assistant "
-                                f"directly: {match.group(0)!r}"
-                            ),
-                            # Indexes into the chunk's own text, not the
-                            # user's turn -- the finding originates in
-                            # retrieved context, so there is no offset into
-                            # ctx.user_message for it to mean.
-                            span=match.span(),
-                        )
-                    )
         return evidence
 
     @staticmethod

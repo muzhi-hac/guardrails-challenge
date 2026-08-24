@@ -153,6 +153,18 @@ class TestStageSelection:
         assert [v.guard for v in run(pipeline, context(), Stage.INPUT).verdicts] == ["pii"]
         assert [v.guard for v in run(pipeline, context(), Stage.OUTPUT).verdicts] == ["grounding"]
 
+    def test_the_default_registry_splits_injection_across_input_and_retrieval(self):
+        """Pins the registry-level shape of the injection/document split:
+        the user-turn channel is registered at INPUT, the document channel
+        at RETRIEVAL -- not both bundled at RETRIEVAL the way a single
+        combined guard used to be.
+        """
+        from guardrails.guards import DocumentGuard, InjectionGuard
+
+        pipeline = GuardrailPipeline()
+        assert [g.name for g in pipeline.guards_for(Stage.INPUT)] == [InjectionGuard.name]
+        assert [g.name for g in pipeline.guards_for(Stage.RETRIEVAL)] == [DocumentGuard.name]
+
 
 class TestSkipping:
     def test_disabled_guard_is_skipped_not_run(self):

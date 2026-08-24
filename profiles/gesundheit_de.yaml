@@ -52,8 +52,10 @@ guards:
       unsupported_commitment: critical
 
   injection:
-    scan_retrieved_documents: true
     cross_turn_window: 8      # longer conversations in this domain
+
+  document:
+    scan_retrieved_documents: true
 
   pii:
     redact_inbound: true

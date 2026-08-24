@@ -55,8 +55,10 @@ guards:
       # key, calibrated to what the language can actually support.
 
   injection:
-    scan_retrieved_documents: true
     cross_turn_window: 5
+
+  document:
+    scan_retrieved_documents: true
 
   pii:
     redact_inbound: true

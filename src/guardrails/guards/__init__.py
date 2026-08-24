@@ -8,6 +8,7 @@ a new guard's configuration surface gets designed rather than accreted.
 from __future__ import annotations
 
 from guardrails.guards.base import Guard, GuardContext, build_verdict, effective_severity
+from guardrails.guards.document import DocumentGuard
 from guardrails.guards.grounding import GroundingGuard
 from guardrails.guards.injection import InjectionGuard
 from guardrails.guards.persona import PersonaGuard
@@ -16,6 +17,7 @@ from guardrails.guards.pii import PiiGuard
 __all__ = [
     "Guard",
     "GuardContext",
+    "DocumentGuard",
     "GroundingGuard",
     "InjectionGuard",
     "PersonaGuard",
@@ -31,6 +33,7 @@ _REGISTRY: dict[str, Guard] = {
     PersonaGuard.name: PersonaGuard(),
     GroundingGuard.name: GroundingGuard(),
     InjectionGuard.name: InjectionGuard(),
+    DocumentGuard.name: DocumentGuard(),
     PiiGuard.name: PiiGuard(),
 }
 

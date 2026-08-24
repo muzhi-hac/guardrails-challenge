@@ -47,6 +47,7 @@ from guardrails.types import Action, AddressForm, EntityKind, Locale, Mode, Seve
 
 __all__ = [
     "AddressForm",
+    "DocumentGuardConfig",
     "GroundingGuardConfig",
     "GuardConfig",
     "GuardsConfig",
@@ -177,16 +178,26 @@ class GroundingGuardConfig(GuardConfig):
 
 
 class InjectionGuardConfig(GuardConfig):
-    KNOWN_FINDINGS: ClassVar[frozenset[str]] = findings.INJECTION_FINDINGS
+    # findings.INJECTION_FINDINGS also names DOCUMENT_INSTRUCTION, which this
+    # guard no longer emits -- that finding moved to DocumentGuardConfig
+    # along with the check itself. Excluded here so a typo'd override for it
+    # is rejected at load time instead of silently doing nothing.
+    KNOWN_FINDINGS: ClassVar[frozenset[str]] = findings.INJECTION_FINDINGS - {
+        findings.DOCUMENT_INSTRUCTION
+    }
+
+    cross_turn_window: int = Field(default=5, ge=1)
+    """How many recent user turns are concatenated and re-scanned, to catch a
+    payload assembled across turns."""
+
+
+class DocumentGuardConfig(GuardConfig):
+    KNOWN_FINDINGS: ClassVar[frozenset[str]] = frozenset({findings.DOCUMENT_INSTRUCTION})
 
     scan_retrieved_documents: bool = True
     """Treat retrieved documents as untrusted input. In an assistant with
     retrieval the document channel, not the user turn, is the realistic
     injection vector."""
-
-    cross_turn_window: int = Field(default=5, ge=1)
-    """How many recent user turns are concatenated and re-scanned, to catch a
-    payload assembled across turns."""
 
 
 class PiiGuardConfig(GuardConfig):
@@ -205,6 +216,7 @@ class GuardsConfig(ConfigModel):
     persona: PersonaGuardConfig
     grounding: GroundingGuardConfig
     injection: InjectionGuardConfig
+    document: DocumentGuardConfig
     pii: PiiGuardConfig
 
     def _fields(self) -> tuple[str, ...]:

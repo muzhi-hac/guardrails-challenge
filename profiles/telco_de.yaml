@@ -1,10 +1,11 @@
 # German mobile-network customer service assistant.
 #
 # Routing is deliberately non-monotonic. CRITICAL maps to safe_fallback rather
-# than handover because the critical findings here are injection and outbound
-# PII: in those cases the reply must not reach the user *or* be pushed into a
-# human agent's queue verbatim. HIGH — an ungrounded pricing or policy claim —
-# is exactly the case a human should answer, so it escalates.
+# than handover because the critical findings here are injection (user turn
+# or retrieved document) and outbound PII: in those cases the reply must not
+# reach the user *or* be pushed into a human agent's queue verbatim. HIGH —
+# an ungrounded pricing or policy claim — is exactly the case a human should
+# answer, so it escalates.
 
 name: telco_de
 brand_name: TeleNova
@@ -48,8 +49,10 @@ guards:
                                          # merely stating an unsupported fact
 
   injection:
-    scan_retrieved_documents: true
     cross_turn_window: 5
+
+  document:
+    scan_retrieved_documents: true
 
   pii:
     redact_inbound: true
