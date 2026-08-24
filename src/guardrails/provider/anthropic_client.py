@@ -60,8 +60,7 @@ def _require_api_key() -> str:
     ``KeyError``.
 
     Every other failure path in this codebase names the offending file and
-    what to do about it (``load_profile``, ``documents._parse``,
-    ``FixtureCompletion._parse_record``); a first-time reader running the
+    what to do about it (``load_profile``, ``documents._parse``); a first-time reader running the
     documented command without a key deserves the same, not a traceback
     ending in ``KeyError: 'ANTHROPIC_API_KEY'`` with no next step.
     """

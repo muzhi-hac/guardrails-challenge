@@ -10,7 +10,6 @@ from guardrails.provider.base import (
     StructuredCompletionResult,
     Turn,
 )
-from guardrails.provider.fixture import FixtureCompletion, fixture_key
 
 __all__ = [
     "AnthropicCompletion",
@@ -18,7 +17,5 @@ __all__ = [
     "CompletionResult",
     "StructuredCompletion",
     "StructuredCompletionResult",
-    "FixtureCompletion",
     "Turn",
-    "fixture_key",
 ]
