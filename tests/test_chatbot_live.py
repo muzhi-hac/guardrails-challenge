@@ -87,17 +87,34 @@ class _StubRetriever:
 
 def _bot(profile_name: str, locale: Locale) -> Chatbot:
     profile = load_profile(PROFILES / f"{profile_name}.yaml").resolve(Mode.CHAT)
+    # These cases verify generation, retrieval isolation and tier-0 grounding.
+    # Cap the unrelated tone judge so its multi-second network variance cannot
+    # turn a corpus test into a judge-budget test. The live provider suite has
+    # a dedicated forced-tool case for tier 1.
+    profile = profile.model_copy(update={"max_tier": 0})
     kb = KnowledgeBase.load(KB_ROOT)
     completion = AnthropicCompletion(model=profile.models.chat)
     judge = AnthropicCompletion(model=profile.models.judge)
     return Chatbot(kb.for_locale(locale), completion, profile, judge=judge)
 
 
-def _bot_with_retriever(profile_name: str, retriever: _StubRetriever) -> Chatbot:
+def _bot_with_retriever(
+    profile_name: str,
+    retriever: _StubRetriever,
+    *,
+    guards_enabled: bool = True,
+) -> Chatbot:
     profile = load_profile(PROFILES / f"{profile_name}.yaml").resolve(Mode.CHAT)
+    profile = profile.model_copy(update={"max_tier": 0})
     completion = AnthropicCompletion(model=profile.models.chat)
     judge = AnthropicCompletion(model=profile.models.judge)
-    return Chatbot(retriever, completion, profile, judge=judge)
+    return Chatbot(
+        retriever,
+        completion,
+        profile,
+        judge=judge,
+        guards_enabled=guards_enabled,
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -150,7 +167,12 @@ async def test_poisoned_document_cannot_inject_an_instruction() -> None:
         text=POISONED_TEXT,
     )
     retriever = _StubRetriever((Scored(poisoned_chunk, 1.0),))
-    bot = _bot_with_retriever("telco_de", retriever)
+    # Isolate the prompt-side nonce defence. With the guard layer enabled the
+    # document guard now stops this exact chunk at RETRIEVAL, so generation is
+    # never called; that correct early-stop behaviour is covered by the unit
+    # suite and the live before/after transcript. This case deliberately lets
+    # the chunk reach the model to verify the independent second defence.
+    bot = _bot_with_retriever("telco_de", retriever, guards_enabled=False)
     turn = await bot.reply("Was kostet Tarif M?", ())
 
     assert "29,99" in turn.reply
