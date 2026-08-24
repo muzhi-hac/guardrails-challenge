@@ -57,5 +57,4 @@ The guard layer is not wired into this entry point yet — see
 | `kb/` | German and English knowledge-base corpus |
 | `profiles/` | Client profiles (`telco_de`, `telco_en`, `gesundheit_de`) |
 | `tests/` | Test scenarios and results |
-| `examples/` | **Placeholder — not yet written.** Demo notebook and example interactions |
-| `docs/evaluation.md` | **Placeholder — not yet written.** Reflection and evaluation |
+| `examples/example_runs.md` | Real transcripts from the CLI against the live model, including runs that expose current limits |
