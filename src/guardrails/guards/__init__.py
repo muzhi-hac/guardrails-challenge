@@ -11,6 +11,7 @@ from guardrails.guards.base import Guard, GuardContext, build_verdict, effective
 from guardrails.guards.grounding import GroundingGuard
 from guardrails.guards.injection import InjectionGuard
 from guardrails.guards.persona import PersonaGuard
+from guardrails.guards.pii import PiiGuard
 
 __all__ = [
     "Guard",
@@ -18,6 +19,7 @@ __all__ = [
     "GroundingGuard",
     "InjectionGuard",
     "PersonaGuard",
+    "PiiGuard",
     "build_verdict",
     "default_guards",
     "effective_severity",
@@ -29,6 +31,7 @@ _REGISTRY: dict[str, Guard] = {
     PersonaGuard.name: PersonaGuard(),
     GroundingGuard.name: GroundingGuard(),
     InjectionGuard.name: InjectionGuard(),
+    PiiGuard.name: PiiGuard(),
 }
 
 
