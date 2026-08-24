@@ -194,3 +194,51 @@ class TestEntities:
         spans = [e.span for e in RULES.extract_entities(text, ALL_KINDS)]
         for (a_lo, a_hi), (b_lo, b_hi) in zip(spans, spans[1:]):
             assert a_hi <= b_lo
+
+
+class TestCommitments:
+    @pytest.mark.parametrize(
+        "text,commitment_id,raw",
+        [
+            ("Ich erstatte Ihnen den Betrag.", "refund", "erstatte"),
+            ("Sie erhalten eine Erstattung.", "refund", "Erstattung"),
+            ("Wir werden den Betrag zurückerstatten.", "refund", "zurückerstatten"),
+            ("Die Gebühr erlassen wir Ihnen.", "waive_fee", "Gebühr erlassen"),
+            ("Dafür fällt keine Gebühr an.", "waive_fee", "keine Gebühr"),
+            ("Die Gebühr entfällt in diesem Fall.", "waive_fee", "Gebühr entfällt"),
+            ("Sie erhalten eine Gutschrift.", "credit", "Gutschrift"),
+            ("Den Betrag schreibe ich Ihnen gut.", "credit", "schreibe ich Ihnen gut"),
+            ("Wir werden Ihnen einen Rabatt gewähren.", "discount", "Rabatt gewähren"),
+            ("Sie bekommen einen Nachlass.", "discount", "Nachlass"),
+            ("Ich rufe Sie zurück.", "schedule_callback", "rufe Sie zurück"),
+            ("Ein Rückruf ist möglich.", "schedule_callback", "Rückruf"),
+            ("Ich sende Ihnen eine Bestätigung.", "send_confirmation_email", "sende Ihnen eine Bestätigung"),
+            ("Sie erhalten eine Bestätigung per E-Mail.", "send_confirmation_email", "Bestätigung per E-Mail"),
+        ],
+    )
+    def test_each_configured_phrase_is_found(self, text, commitment_id, raw):
+        hits = RULES.find_commitments(text)
+        assert [(h.commitment_id, h.raw) for h in hits] == [(commitment_id, raw)]
+
+    def test_matching_is_case_insensitive(self):
+        hits = RULES.find_commitments("ich ERSTATTE ihnen den betrag.")
+        assert [h.commitment_id for h in hits] == ["refund"]
+
+    def test_spans_index_the_original_text(self):
+        text = "Gerne. Ich erstatte Ihnen den Betrag."
+        (hit,) = RULES.find_commitments(text)
+        lo, hi = hit.span
+        assert text[lo:hi] == hit.raw == "erstatte"
+
+    def test_a_reply_with_no_promise_finds_nothing(self):
+        assert RULES.find_commitments("Ihr Vertrag läuft zum 01.02.2026 aus.") == ()
+
+    def test_prose_containing_a_phrase_as_a_substring_of_another_word_does_not_match(self):
+        """`Rückruf` must not fire inside an unrelated compound that merely
+        contains the same letters -- word boundaries, not substring search."""
+        assert RULES.find_commitments("Der Rückrufservice ist derzeit nicht verfügbar.") == ()
+
+    def test_multiple_commitments_in_one_reply_are_all_found(self):
+        text = "Ich erstatte Ihnen den Betrag und rufe Sie zurück."
+        hits = RULES.find_commitments(text)
+        assert {h.commitment_id for h in hits} == {"refund", "schedule_callback"}

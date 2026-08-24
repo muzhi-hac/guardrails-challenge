@@ -20,9 +20,11 @@ from typing import ClassVar
 
 from guardrails.locale.base import (
     AddressFormHit,
+    CommitmentHit,
     EntityMention,
     Sentence,
     count_words,
+    find_commitments_by_phrase,
     format_decimal,
     simple_tokenize,
 )
@@ -120,6 +122,24 @@ def _parse_amount(raw: str) -> Decimal | None:
         return Decimal(raw.replace(",", ""))
     except InvalidOperation:
         return None
+
+
+# --- commitments -------------------------------------------------------
+
+_COMMITMENT_PHRASES: tuple[tuple[str, str], ...] = (
+    ("refund", "refund"),
+    ("refund", "reimburse"),
+    ("waive_fee", "waive the fee"),
+    ("waive_fee", "no charge"),
+    ("credit", "credit your account"),
+    ("discount", "grant a discount"),
+    ("schedule_callback", "call you back"),
+    ("send_confirmation_email", "send you a confirmation"),
+)
+"""Mirrors ``de.py``'s ``_COMMITMENT_PHRASES`` -- same commitment ids, worded
+for English. Kept as a same-shaped table rather than a shared cross-language
+mapping because the wording, not the id, is what genuinely differs; the ids
+are the language-independent part and already live in the profile schema."""
 
 
 class EnglishRules:
@@ -235,6 +255,9 @@ class EnglishRules:
                 claim(EntityMention(EntityKind.NUMBER, m.group(), format_decimal(amount), m.span()))
 
         return tuple(sorted((f for f in found if f.kind in kinds), key=lambda e: e.span))
+
+    def find_commitments(self, text: str) -> tuple[CommitmentHit, ...]:
+        return find_commitments_by_phrase(text, _COMMITMENT_PHRASES)
 
     def tokenize(self, text: str) -> tuple[str, ...]:
         """English has no compounding of the kind German has; the trivial

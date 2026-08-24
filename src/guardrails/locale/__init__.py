@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from guardrails.locale.base import (
     AddressFormHit,
+    CommitmentHit,
     EntityMention,
     LocaleRules,
     Sentence,
@@ -20,6 +21,7 @@ from guardrails.types import Locale
 
 __all__ = [
     "AddressFormHit",
+    "CommitmentHit",
     "EntityMention",
     "EnglishRules",
     "GermanRules",

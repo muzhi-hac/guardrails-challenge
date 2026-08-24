@@ -30,10 +30,12 @@ from guardrails.types import AddressForm, EntityKind, Locale
 
 __all__ = [
     "AddressFormHit",
+    "CommitmentHit",
     "EntityMention",
     "LocaleRules",
     "Sentence",
     "count_words",
+    "find_commitments_by_phrase",
     "format_decimal",
     "surface_tokens",
     "split_hyphenated",
@@ -62,6 +64,22 @@ class AddressFormHit(NamedTuple):
     contraction are not the same strength of signal."""
 
     token: str
+    span: tuple[int, int]
+
+
+class CommitmentHit(NamedTuple):
+    """A promise the assistant makes in text, located in the original string.
+
+    Phrase lists live in the language modules rather than here or in the
+    grounding guard: a promise is worded, and how it is worded is exactly
+    the thing that varies per language, the same reason tokenization and
+    address-form detection live there. ``commitment_id`` is the
+    language-independent identifier a profile's ``allowed_commitments``
+    refers to; ``raw`` and ``span`` are what the evidence trail shows.
+    """
+
+    commitment_id: str
+    raw: str
     span: tuple[int, int]
 
 
@@ -111,6 +129,19 @@ class LocaleRules(Protocol):
         self, text: str, kinds: frozenset[EntityKind]
     ) -> tuple[EntityMention, ...]:
         """Extract and normalise quantities, without overlaps, ordered by span."""
+        ...
+
+    def find_commitments(self, text: str) -> tuple[CommitmentHit, ...]:
+        """Promises the assistant makes in ``text``, as (commitment_id, span)
+        pairs.
+
+        A promise is a different failure mode than an ungrounded fact: stating
+        an unsupported price is wrong, but promising a refund the client never
+        authorised creates an obligation on top of being wrong. Matching is
+        phrase-based rather than routed through :meth:`extract_entities`
+        because a commitment is not a quantity — there is no normalised form
+        to compare, only whether the phrase was said at all.
+        """
         ...
 
     def tokenize(self, text: str) -> tuple[str, ...]:
@@ -186,3 +217,46 @@ def simple_tokenize(text: str) -> tuple[str, ...]:
     for token in surface_tokens(text):
         out.extend(dict.fromkeys(split_hyphenated(token.casefold())))
     return tuple(out)
+
+
+def _commitment_pattern(phrase: str) -> re.Pattern[str]:
+    """Compile one commitment phrase into a case-insensitive, whitespace-
+    tolerant, word-bounded pattern.
+
+    Whitespace between words is ``\\s+`` rather than a literal space so a
+    reply that wraps or double-spaces a multi-word phrase (``Gebühr\\nerlassen``
+    from a formatter) still matches; the alternative -- a literal phrase copy
+    -- would make the check fragile to whitespace the model does not control.
+    """
+    words = phrase.split()
+    body = r"\s+".join(re.escape(word) for word in words)
+    return re.compile(rf"\b{body}\b", re.IGNORECASE)
+
+
+def find_commitments_by_phrase(
+    text: str, phrases: tuple[tuple[str, str], ...]
+) -> tuple[CommitmentHit, ...]:
+    """Match ``(commitment_id, phrase)`` pairs against ``text``.
+
+    Shared between languages because *how* a phrase list is matched --
+    case-insensitively, first match wins where two ids' phrases would
+    otherwise claim the same words -- is not language-specific; only the
+    phrases themselves are. Overlap resolution matters for the same reason it
+    matters in :meth:`LocaleRules.extract_entities`: two commitment ids must
+    never both point at the identical span, or a client reading the trace
+    could not tell which promise was actually made.
+
+    ``phrases`` is a tuple of ``(commitment_id, phrase)`` rather than
+    pre-compiled patterns, so each language module stays plain data next to
+    its other phrase lists instead of importing ``re`` for this alone.
+    """
+    found: list[CommitmentHit] = []
+    taken: list[tuple[int, int]] = []
+    for commitment_id, phrase in phrases:
+        for m in _commitment_pattern(phrase).finditer(text):
+            span = m.span()
+            if any(span[0] < hi and lo < span[1] for lo, hi in taken):
+                continue
+            taken.append(span)
+            found.append(CommitmentHit(commitment_id, m.group(), span))
+    return tuple(sorted(found, key=lambda h: h.span))

@@ -242,3 +242,40 @@ def test_gbp_still_normalises_as_gbp():
         if m.kind is EntityKind.PRICE
     ]
     assert mention.normalized == "19.99 GBP"
+
+
+class TestCommitments:
+    @pytest.mark.parametrize(
+        "text,commitment_id,raw",
+        [
+            ("We will refund the amount.", "refund", "refund"),
+            ("We will reimburse you in full.", "refund", "reimburse"),
+            ("We will waive the fee for you.", "waive_fee", "waive the fee"),
+            ("There is no charge for this.", "waive_fee", "no charge"),
+            ("We will credit your account.", "credit", "credit your account"),
+            ("We can grant a discount here.", "discount", "grant a discount"),
+            ("I will call you back tomorrow.", "schedule_callback", "call you back"),
+            ("We will send you a confirmation.", "send_confirmation_email", "send you a confirmation"),
+        ],
+    )
+    def test_each_configured_phrase_is_found(self, text, commitment_id, raw):
+        hits = RULES.find_commitments(text)
+        assert [(h.commitment_id, h.raw) for h in hits] == [(commitment_id, raw)]
+
+    def test_matching_is_case_insensitive(self):
+        hits = RULES.find_commitments("We will REFUND the amount.")
+        assert [h.commitment_id for h in hits] == ["refund"]
+
+    def test_spans_index_the_original_text(self):
+        text = "Certainly. We will refund the amount."
+        (hit,) = RULES.find_commitments(text)
+        lo, hi = hit.span
+        assert text[lo:hi] == hit.raw == "refund"
+
+    def test_a_reply_with_no_promise_finds_nothing(self):
+        assert RULES.find_commitments("Your contract ends on 1 February 2026.") == ()
+
+    def test_multiple_commitments_in_one_reply_are_all_found(self):
+        text = "We will refund the amount and call you back tomorrow."
+        hits = RULES.find_commitments(text)
+        assert {h.commitment_id for h in hits} == {"refund", "schedule_callback"}

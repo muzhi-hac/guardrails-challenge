@@ -23,9 +23,11 @@ from typing import ClassVar
 
 from guardrails.locale.base import (
     AddressFormHit,
+    CommitmentHit,
     EntityMention,
     Sentence,
     count_words,
+    find_commitments_by_phrase,
     format_decimal,
     split_hyphenated,
     surface_tokens,
@@ -99,6 +101,32 @@ def _parse_amount(raw: str) -> Decimal | None:
         return Decimal(raw.replace(".", "").replace(",", "."))
     except InvalidOperation:
         return None
+
+
+# --- commitments -------------------------------------------------------
+
+_COMMITMENT_PHRASES: tuple[tuple[str, str], ...] = (
+    ("refund", "erstatte"),
+    ("refund", "Erstattung"),
+    ("refund", "zurückerstatten"),
+    ("waive_fee", "Gebühr erlassen"),
+    ("waive_fee", "keine Gebühr"),
+    ("waive_fee", "Gebühr entfällt"),
+    ("credit", "Gutschrift"),
+    ("credit", "schreibe ich Ihnen gut"),
+    ("discount", "Rabatt gewähren"),
+    ("discount", "Nachlass"),
+    ("schedule_callback", "rufe Sie zurück"),
+    ("schedule_callback", "Rückruf"),
+    ("send_confirmation_email", "sende Ihnen eine Bestätigung"),
+    ("send_confirmation_email", "Bestätigung per E-Mail"),
+)
+"""A small, defensible set rather than an exhaustive one: a commitment id a
+profile has not heard of is still routed through ``allowed_commitments``, so
+extending this list only ever tightens detection, never loosens it. Phrase
+order matters where two ids could plausibly overlap on the same words (none
+do here), because :func:`find_commitments_by_phrase` resolves overlap
+first-match-wins."""
 
 
 # --- retrieval tokenization -------------------------------------------------
@@ -348,6 +376,9 @@ class GermanRules:
                 claim(EntityMention(EntityKind.NUMBER, m.group(), format_decimal(amount), m.span()))
 
         return tuple(sorted((f for f in found if f.kind in kinds), key=lambda e: e.span))
+
+    def find_commitments(self, text: str) -> tuple[CommitmentHit, ...]:
+        return find_commitments_by_phrase(text, _COMMITMENT_PHRASES)
 
     def tokenize(self, text: str) -> tuple[str, ...]:
         """Six-step pipeline, additive throughout, never replacing. See the
