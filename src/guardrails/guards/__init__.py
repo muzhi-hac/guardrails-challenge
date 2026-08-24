@@ -9,12 +9,14 @@ from __future__ import annotations
 
 from guardrails.guards.base import Guard, GuardContext, build_verdict, effective_severity
 from guardrails.guards.grounding import GroundingGuard
+from guardrails.guards.injection import InjectionGuard
 from guardrails.guards.persona import PersonaGuard
 
 __all__ = [
     "Guard",
     "GuardContext",
     "GroundingGuard",
+    "InjectionGuard",
     "PersonaGuard",
     "build_verdict",
     "default_guards",
@@ -26,6 +28,7 @@ __all__ = [
 _REGISTRY: dict[str, Guard] = {
     PersonaGuard.name: PersonaGuard(),
     GroundingGuard.name: GroundingGuard(),
+    InjectionGuard.name: InjectionGuard(),
 }
 
 
