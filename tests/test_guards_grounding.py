@@ -87,18 +87,57 @@ class TestEntityGrounding:
         lo, hi = evidence.span
         assert "24,99 EUR" == "Tarif M kostet 24,99 EUR im Monat."[lo:hi]
 
-    def test_normalized_comparison_crosses_locale_notation(self):
-        """A German chunk writes `29,99 EUR`; an English reply writes
-        `29.99 EUR`. Both mean the same price -- the guard must not report a
-        false ungrounded_price just because retrieval returned a chunk
-        spelled the other locale's way."""
+    def test_normalized_comparison_crosses_notation_within_one_locale(self):
+        """`normalized` earns its keep on notation variance *within* one
+        locale's grammar, not across locales -- retrieval is locale-
+        partitioned (see the module docstring on GroundingGuard), so a German
+        turn never sees an English chunk or vice versa. What genuinely varies
+        within German is currency placement and spelling: `29,99 EUR`,
+        `29,99 €`, `EUR 29,99`, and `29,99 Euro` must all ground each other."""
+        de_spellings = ("29,99 EUR", "29,99 €", "EUR 29,99", "29,99 Euro")
+        for chunk_spelling in de_spellings:
+            for reply_spelling in de_spellings:
+                verdict = run(
+                    f"Tarif M kostet {reply_spelling} im Monat.",
+                    retrieved=(f"Tarif M kostet {chunk_spelling} im Monat.",),
+                )
+                assert verdict.outcome is Outcome.PASS, (chunk_spelling, reply_spelling)
+                assert verdict.evidence == (), (chunk_spelling, reply_spelling)
+
+        en_spellings = ("29.99 EUR", "€29.99")
+        for chunk_spelling in en_spellings:
+            for reply_spelling in en_spellings:
+                verdict = run(
+                    f"Tariff M costs {reply_spelling} per month.",
+                    retrieved=(f"Tariff M costs {chunk_spelling} per month.",),
+                    profile="telco_en",
+                )
+                assert verdict.outcome is Outcome.PASS, (chunk_spelling, reply_spelling)
+                assert verdict.evidence == (), (chunk_spelling, reply_spelling)
+
+    def test_regression_a_foreign_locales_grammar_must_not_ground_a_fabricated_price(self):
+        """Before the fix, chunk entities were extracted with *every*
+        registered locale's rules, unioned, not just the turn's own
+        (`ctx.rules`). Retrieval is locale-partitioned -- a de-DE turn never
+        retrieves an en-GB chunk -- so that union was reachable only through
+        the guard's own extraction, never through real retrieval, and it
+        backfired: parsing the German chunk `"Tarif M kostet 29,99 EUR pro
+        Monat."` with *English* rules does not fail or return nothing: English
+        reads `,` as a thousands separator, drops the leading `29`, and
+        confidently returns a wrong-but-well-formed `99.00 EUR`. That spurious
+        entity landed in the grounded set, so a reply fabricating `99,00 EUR`
+        against a corpus that actually says `29,99 EUR` passed as grounded.
+        A guard that accepts an invented price is wrong in the direction that
+        matters most; this asserts the fabrication is caught."""
+        chunk = "Tarif M kostet 29,99 EUR pro Monat."
         verdict = run(
-            "Tariff M costs 29.99 EUR per month.",
-            retrieved=("Tarif M kostet 29,99 EUR im Monat.",),
-            profile="telco_en",
+            "Tarif M kostet 99,00 EUR pro Monat.",
+            retrieved=(chunk,),
         )
-        assert verdict.outcome is Outcome.PASS
-        assert verdict.evidence == ()
+        assert verdict.outcome is Outcome.FAIL
+        assert findings.UNGROUNDED_PRICE in kinds(verdict)
+        (evidence,) = [e for e in verdict.evidence if e.kind == findings.UNGROUNDED_PRICE]
+        assert "99,00" in evidence.detail
 
     def test_an_entity_kind_absent_from_check_entities_is_not_checked(self):
         ctx = context(

@@ -18,23 +18,31 @@ the harder problem is still being worked on.
 
 Comparing normalised values rather than raw text is the whole point of
 routing this through :meth:`~guardrails.locale.base.LocaleRules.extract_entities`
-instead of a substring search: the German channel writes ``29,99 EUR`` and the
-English one writes ``29.99 EUR``. Both extract to ``"29.99 EUR"`` — but only
-if each string is parsed with the rules that understand its own punctuation
-convention. Parsing ``29,99 EUR`` with the *English* comma-as-thousands
-grammar does not fail loudly; it silently mis-extracts ``99 EUR`` (English
-reads the comma as a thousands separator, drops the leading digits, and
-happily returns a wrong-but-well-formed price). That is why retrieved
-documents are extracted with **every registered locale's rules**, unioned,
-rather than only the reply's own: retrieval is over untrusted external
-content that is not guaranteed to share the reply's punctuation convention —
-a mirrored document, a pasted note, a legacy record — and assuming it does
-would turn a correctly-quoted foreign-format figure into a false
-``ungrounded_price``. The reply itself is extracted only with the profile's
-own locale rules, because the reply is this deployment's own output and is
-expected to conform to the convention it was asked to write in; extracting it
-under a locale it was never written in would manufacture entities that were
-never actually said.
+instead of a substring search: the same locale writes ``29,99 EUR`` in one
+place and ``29,99 Euro`` or ``EUR 29,99`` in another, and all of those must
+extract to the same normalised price. That is what ``normalized`` buys, and
+it holds within one locale's grammar without any cross-locale machinery.
+
+Both the reply and the retrieved chunks are extracted with **``ctx.rules``
+only** — the turn's own locale, never every registered locale unioned.
+Retrieval in this system is locale-partitioned (:func:`chatbot.main` builds
+each turn's retriever from ``kb.for_locale(profile.locale)``), so a German
+turn only ever retrieves ``de-DE`` chunks and an English turn only ever
+retrieves ``en-GB`` chunks; a chunk written in a locale foreign to the turn
+cannot occur here, and extracting for one that cannot occur is not a harmless
+widening. Parsing text with the wrong locale's grammar does not fail loudly:
+German reads ``,`` as the decimal separator, English reads it as a thousands
+separator, so English rules parsing the German chunk ``"Tarif M kostet 29,99
+EUR pro Monat."`` do not reject it or return nothing — they confidently
+return the wrong-but-well-formed price ``99.00 EUR``. Unioning that
+mis-extraction into the grounded set does not widen recall, it manufactures
+an entity retrieval never actually returned, and a reply that fabricates
+``99,00 EUR`` against a corpus that says ``29,99 EUR`` grounds by accident.
+A guard whose false-negative path is "invents a spurious grounding entity
+from a locale it was never asked to parse" is failing in the one direction a
+grounding guard cannot afford to fail in — so this extracts each turn's
+chunks the same way it extracts the reply: with the rules for the locale the
+turn is actually in, and no others.
 
 The **commitment check** is a different failure mode from the entity check
 and is kept separate rather than folded into it. An ungrounded price is a
@@ -56,7 +64,6 @@ from typing import ClassVar
 
 from guardrails import findings
 from guardrails.guards.base import GuardContext, build_verdict
-from guardrails.locale import get_rules, supported_locales
 from guardrails.types import EntityKind, Evidence, Severity, Stage, Verdict
 
 __all__ = ["GroundingGuard"]
@@ -127,9 +134,13 @@ class GroundingGuard:
         resolves overlaps within one string, and there is no reason to make
         that resolution span chunk boundaries it was never designed to see.
 
-        Chunks are parsed with every registered locale's rules, not only
-        ``ctx.rules`` — see the module docstring for why a single locale's
-        grammar cannot be trusted to parse content it did not write.
+        Chunks are parsed with ``ctx.rules`` — the turn's own locale — not
+        every registered locale's rules. See the module docstring for why
+        retrieval being locale-partitioned makes that the correct choice
+        rather than a narrowing: a chunk in a foreign locale cannot appear
+        here, and parsing with a foreign grammar anyway does not fail loudly,
+        it invents a wrong-but-well-formed entity that would silently ground
+        a fabricated reply.
         """
         kinds = frozenset(ctx.profile.guards.grounding.check_entities)
         if not kinds:
@@ -138,8 +149,7 @@ class GroundingGuard:
         grounded = {
             mention.normalized
             for chunk in ctx.retrieved
-            for locale in supported_locales()
-            for mention in get_rules(locale).extract_entities(chunk, kinds)
+            for mention in ctx.rules.extract_entities(chunk, kinds)
         }
 
         return [
