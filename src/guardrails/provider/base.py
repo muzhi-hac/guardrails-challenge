@@ -1,18 +1,18 @@
-"""The protocol for chat completion.
+"""Protocols for ordinary chat and forced-tool structured completion.
 
-Chat only. The forced tool use, structured output, price table, and
-budget-aware timeout a judge needs all belong to M7 — their shape has to be
-designed together with the tone / entailment judge, and settling it early
-would settle it wrong.
+The two call shapes are deliberately separate protocols. Most callers need
+plain text and should not acquire optional ``tools`` arguments they never use;
+judges require a tool call whose parsed input is their result. Keeping that
+concern in :class:`StructuredCompletion` also prevents an empty text result
+from silently discarding a ``tool_use`` block.
 
 ``CompletionResult`` already carries token counts; the USD conversion is left
 for M7. That way adding the price table later doesn't require changing this
 signature, and ``Verdict.cost_usd``, which has existed since M1, gets a real
 source to draw from once it lands.
 
-``async`` even though the fixture implementation never awaits — the same
-reason ``Guard.check()`` is async even when fully deterministic: it lets the
-orchestrator maintain exactly one code path.
+Both protocols are asynchronous for the same reason ``Guard.check()`` is: the
+orchestrator needs one path for real network implementations and test stubs.
 
 ---
 Relay behaviour observations, verified 2026-08-22, apply only to the
@@ -37,11 +37,17 @@ endpoint, other channels, or future behaviour:
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import NamedTuple, Protocol
+from typing import Any, NamedTuple, Protocol, runtime_checkable
 
-__all__ = ["Completion", "CompletionResult", "Turn"]
+__all__ = [
+    "Completion",
+    "CompletionResult",
+    "StructuredCompletion",
+    "StructuredCompletionResult",
+    "Turn",
+]
 
 
 class Turn(NamedTuple):
@@ -82,7 +88,44 @@ class CompletionResult:
     never making policy judgements."""
 
 
+@dataclass(frozen=True, slots=True)
+class StructuredCompletionResult:
+    """Parsed tool input plus the same provider facts as a text completion.
+
+    The provider parses the tool block but does not validate a judge-specific
+    schema. The guard that owns the schema performs that validation.
+    """
+
+    input: Mapping[str, Any]
+    model: str
+    input_tokens: int
+    output_tokens: int
+    latency_ms: float
+    stop_reason: str
+
+
 class Completion(Protocol):
     async def complete(
         self, *, system: str, messages: Sequence[Turn], max_tokens: int
     ) -> CompletionResult: ...
+
+
+@runtime_checkable
+class StructuredCompletion(Protocol):
+    """A model call whose result is one named, forced tool invocation.
+
+    This is a second protocol rather than optional parameters on
+    :class:`Completion`: ordinary chat callers have no reason to know about
+    tool schemas, while a judge must never mistake the absence of text blocks
+    for an empty answer.
+    """
+
+    async def complete_structured(
+        self,
+        *,
+        system: str,
+        messages: Sequence[Turn],
+        max_tokens: int,
+        tool_name: str,
+        input_schema: Mapping[str, Any],
+    ) -> StructuredCompletionResult: ...

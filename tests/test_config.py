@@ -109,6 +109,16 @@ class TestTyposAreRejected:
         with pytest.raises(ValidationError, match="unknown finding kind"):
             Profile.model_validate(raw)
 
+    def test_tone_override_belongs_to_the_tone_guard_only(self):
+        raw = raw_telco()
+        raw["guards"]["persona"]["severity_overrides"] = {"tone": "medium"}
+        with pytest.raises(ValidationError, match="unknown finding kind"):
+            Profile.model_validate(raw)
+
+        raw = raw_telco()
+        raw["guards"]["tone"]["severity_overrides"] = {"tone": "medium"}
+        assert Profile.model_validate(raw).guards.tone.severity_overrides["tone"] is Severity.MEDIUM
+
 
 class TestRoutingIsTotal:
     def test_missing_severity_is_rejected(self):
@@ -161,7 +171,9 @@ class TestResolution:
         profile = load_profile(PROFILES / "telco_de.yaml")
         assert profile.resolve(Mode.VOICE).budget_ms == 150
         assert profile.resolve(Mode.VOICE).max_tier == 0
+        assert profile.resolve(Mode.CHAT).budget_ms == 5000
         assert profile.resolve(Mode.CHAT).max_tier == 1
+        assert profile.resolve(Mode.CHAT).models.judge == "claude-sonnet-5"
 
     def test_guard_failure_policy_is_never_none_after_resolution(self):
         """The type is Optional for YAML's sake; resolution makes it concrete.

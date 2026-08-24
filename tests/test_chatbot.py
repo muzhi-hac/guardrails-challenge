@@ -22,7 +22,7 @@ import pytest
 
 from chatbot import HISTORY_TURNS, Chatbot, trace_record
 from guardrails.pipeline import GuardrailPipeline
-from guardrails.provider.base import CompletionResult, Turn
+from guardrails.provider.base import CompletionResult, StructuredCompletionResult, Turn
 from guardrails.retrieval.chunks import Chunk, Scored
 from guardrails.retrieval.knowledge_base import KnowledgeBase
 from guardrails.types import (
@@ -58,6 +58,25 @@ class SpyCompletion:
             output_tokens=1,
             latency_ms=0.0,
             stop_reason="end_turn",
+        )
+
+    async def complete_structured(
+        self, *, system, messages, max_tokens, tool_name, input_schema
+    ):
+        dimensions = input_schema["properties"]["assessments"]["items"]["properties"]["dimension"]["enum"]
+        return StructuredCompletionResult(
+            input={
+                "assessments": [
+                    {"dimension": dimension, "passed": True, "reason": "Matches the brand tone."}
+                    for dimension in dimensions
+                ],
+                "confidence": 1.0,
+            },
+            model="spy-judge",
+            input_tokens=1,
+            output_tokens=1,
+            latency_ms=0.0,
+            stop_reason="tool_use",
         )
 
 
@@ -372,6 +391,25 @@ class ScriptedCompletion:
             output_tokens=1,
             latency_ms=0.0,
             stop_reason="end_turn",
+        )
+
+    async def complete_structured(
+        self, *, system, messages, max_tokens, tool_name, input_schema
+    ):
+        dimensions = input_schema["properties"]["assessments"]["items"]["properties"]["dimension"]["enum"]
+        return StructuredCompletionResult(
+            input={
+                "assessments": [
+                    {"dimension": dimension, "passed": True, "reason": "Matches the brand tone."}
+                    for dimension in dimensions
+                ],
+                "confidence": 1.0,
+            },
+            model="scripted-judge",
+            input_tokens=1,
+            output_tokens=1,
+            latency_ms=0.0,
+            stop_reason="tool_use",
         )
 
 

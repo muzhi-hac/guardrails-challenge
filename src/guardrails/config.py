@@ -60,6 +60,7 @@ __all__ = [
     "PiiGuardConfig",
     "Profile",
     "ResolvedProfile",
+    "ToneGuardConfig",
     "load_profile",
 ]
 
@@ -157,6 +158,16 @@ class PersonaGuardConfig(GuardConfig):
     persona: PersonaSpec
 
 
+class ToneGuardConfig(GuardConfig):
+    """Policy surface for the tier-1 brand-tone judge.
+
+    The dimensions themselves stay in ``PersonaSpec.tone``: brand voice is one
+    specification, and duplicating it here would create two lists that drift.
+    """
+
+    KNOWN_FINDINGS: ClassVar[frozenset[str]] = findings.TONE_FINDINGS
+
+
 class GroundingGuardConfig(GuardConfig):
     KNOWN_FINDINGS: ClassVar[frozenset[str]] = findings.GROUNDING_FINDINGS
 
@@ -214,6 +225,7 @@ class GuardsConfig(ConfigModel):
     is a deliberate edit here."""
 
     persona: PersonaGuardConfig
+    tone: ToneGuardConfig
     grounding: GroundingGuardConfig
     injection: InjectionGuardConfig
     document: DocumentGuardConfig

@@ -45,11 +45,12 @@ from __future__ import annotations
 
 import os
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 from anthropic import AsyncAnthropic
 
-from guardrails.provider.base import CompletionResult, Turn
+from guardrails.provider.base import CompletionResult, StructuredCompletionResult, Turn
 
 __all__ = ["AnthropicCompletion"]
 
@@ -76,8 +77,12 @@ def _require_api_key() -> str:
 
 
 class AnthropicCompletion:
-    """The real implementation of the ``Completion`` protocol, via the
-    Anthropic Messages API."""
+    """Anthropic implementation of both completion protocols.
+
+    Plain chat concatenates text blocks. Structured completion instead
+    requires one forced ``tool_use`` block and returns its parsed input; the
+    paths stay separate so a judge result cannot be reduced to ``text=""``.
+    """
 
     def __init__(self, model: str, client: AsyncAnthropic | None = None) -> None:
         self._model = model
@@ -120,6 +125,50 @@ class AnthropicCompletion:
 
         return CompletionResult(
             text=text,
+            model=response.model,
+            input_tokens=response.usage.input_tokens,
+            output_tokens=response.usage.output_tokens,
+            latency_ms=latency_ms,
+            stop_reason=stop_reason,
+        )
+
+    async def complete_structured(
+        self,
+        *,
+        system: str,
+        messages: Sequence[Turn],
+        max_tokens: int,
+        tool_name: str,
+        input_schema: Mapping[str, Any],
+    ) -> StructuredCompletionResult:
+        """Return the input of exactly one forced invocation of ``tool_name``."""
+        started = time.perf_counter()
+        response = await self._client.messages.create(
+            model=self._model,
+            max_tokens=max_tokens,
+            system=system,
+            messages=[{"role": t.role, "content": t.content} for t in messages],
+            tools=[{"name": tool_name, "input_schema": dict(input_schema)}],
+            tool_choice={"type": "tool", "name": tool_name},
+        )
+        latency_ms = (time.perf_counter() - started) * 1000
+
+        matches = [
+            block
+            for block in response.content
+            if block.type == "tool_use" and block.name == tool_name
+        ]
+        if len(matches) != 1:
+            raise ValueError(
+                f"expected exactly one {tool_name!r} tool_use block; got {len(matches)}"
+            )
+        payload = matches[0].input
+        if not isinstance(payload, Mapping):
+            raise ValueError(f"tool {tool_name!r} returned a non-object input")
+
+        stop_reason = response.stop_reason if response.stop_reason is not None else "unknown"
+        return StructuredCompletionResult(
+            input=dict(payload),
             model=response.model,
             input_tokens=response.usage.input_tokens,
             output_tokens=response.usage.output_tokens,

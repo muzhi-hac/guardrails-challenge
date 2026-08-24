@@ -11,10 +11,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from guardrails.provider.base import CompletionResult, Turn
+from guardrails.provider.anthropic_client import AnthropicCompletion
 from guardrails.provider.fixture import FixtureCompletion, fixture_key
 
 MESSAGES = (Turn(role="user", content="Was kostet Tarif M?"),)
@@ -175,3 +177,53 @@ def test_stop_reason_distinguishes_truncated_from_complete_empty_reply():
     assert truncated.stop_reason != complete.stop_reason
     assert truncated.stop_reason == "max_tokens"
     assert complete.stop_reason == "end_turn"
+
+
+async def test_structured_completion_forces_and_returns_the_named_tool_input():
+    class Messages:
+        def __init__(self):
+            self.kwargs = None
+
+        async def create(self, **kwargs):
+            self.kwargs = kwargs
+            return SimpleNamespace(
+                model="judge-model",
+                content=[
+                    SimpleNamespace(type="thinking", text="private"),
+                    SimpleNamespace(
+                        type="tool_use",
+                        name="record_result",
+                        input={"passed": True},
+                    ),
+                ],
+                usage=SimpleNamespace(input_tokens=12, output_tokens=4),
+                stop_reason="tool_use",
+            )
+
+    messages_api = Messages()
+    client = SimpleNamespace(messages=messages_api)
+    provider = AnthropicCompletion(model="judge-model", client=client)
+
+    result = await provider.complete_structured(
+        system="Judge.",
+        messages=(Turn("user", "Reply data"),),
+        max_tokens=100,
+        tool_name="record_result",
+        input_schema={
+            "type": "object",
+            "properties": {"passed": {"type": "boolean"}},
+            "required": ["passed"],
+        },
+    )
+
+    assert result.input == {"passed": True}
+    assert result.model == "judge-model"
+    assert result.input_tokens == 12
+    assert result.output_tokens == 4
+    assert result.latency_ms >= 0
+    assert result.stop_reason == "tool_use"
+    assert messages_api.kwargs["tool_choice"] == {
+        "type": "tool",
+        "name": "record_result",
+    }
+    assert messages_api.kwargs["tools"][0]["name"] == "record_result"

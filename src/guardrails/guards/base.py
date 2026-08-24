@@ -20,6 +20,7 @@ from typing import ClassVar, Protocol, runtime_checkable
 
 from guardrails.config import ResolvedProfile
 from guardrails.locale.base import LocaleRules
+from guardrails.provider.base import StructuredCompletion
 from guardrails.types import Evidence, Outcome, Severity, Stage, Verdict
 
 __all__ = ["Guard", "GuardContext", "build_verdict", "effective_severity"]
@@ -47,6 +48,14 @@ class GuardContext:
     reply: str = ""
     retrieved: tuple[str, ...] = ()
     history: tuple[str, ...] = ()
+    judge: StructuredCompletion | None = None
+    """Optional per-turn tier-1 client, supplied by ``Chatbot``.
+
+    Registered guards are constructed with no arguments, so the client cannot
+    live on a guard instance. A tier-1 guard raises when this is absent; the
+    orchestrator then applies the profile's ``on_error`` policy rather than
+    inventing a PASS for a check that never ran.
+    """
 
 
 @runtime_checkable

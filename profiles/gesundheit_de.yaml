@@ -18,9 +18,11 @@ locale: de-DE
 
 models:
   chat: claude-opus-5
-  judge: claude-opus-5
+  # Measured 2026-08-25 with forced tool choice: sonnet median 3583 ms versus
+  # opus 6303 ms, with identical decisions in all three constrained probes.
+  judge: claude-sonnet-5
   judge_effort: medium      # higher effort: entailment matters more here
-  judge_min_budget_ms: 400
+  judge_min_budget_ms: 4000
 
 routing:
   none: continue
@@ -41,6 +43,8 @@ guards:
       max_sentence_words: 22
       tts_safe: false         # text channel only
       tone: ["formal", "empathetic", "cautious"]
+
+  tone: {}                 # dimensions come from persona.tone, one source of truth
 
   grounding:
     check_entities: ["number", "price", "date", "duration"]
@@ -65,7 +69,8 @@ guards:
 
 modes:
   chat:
-    budget_ms: 2500           # a slower answer is acceptable here
+    # The judge's 3583 ms measured median does not fit the former 2500 ms.
+    budget_ms: 5000
     max_tier: 1
     on_timeout: high
     on_error: high

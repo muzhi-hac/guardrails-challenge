@@ -15,9 +15,11 @@ locale: en-GB
 
 models:
   chat: claude-opus-5
-  judge: claude-opus-5
+  # Measured 2026-08-25 with forced tool choice: sonnet median 3583 ms versus
+  # opus 6303 ms, with identical decisions in all three constrained probes.
+  judge: claude-sonnet-5
   judge_effort: low
-  judge_min_budget_ms: 400
+  judge_min_budget_ms: 4000
 
 routing:
   none: continue
@@ -41,6 +43,8 @@ guards:
       max_sentence_words: 25
       tts_safe: true
       tone: ["formal", "empathetic", "precise"]
+
+  tone: {}                 # dimensions come from persona.tone, one source of truth
 
   grounding:
     check_entities: ["number", "price", "date", "duration"]
@@ -69,6 +73,8 @@ guards:
 modes:
   voice:
     budget_ms: 150
+    # The 3583 ms measured judge median is over 24x this 150 ms budget, so
+    # excluding tier 1 is a measured constraint, not an intuition.
     max_tier: 0             # deterministic checks only
     on_timeout: none        # fail open: stalling a live call costs more than
     on_error: none          # the residual risk of one unchecked turn
@@ -76,7 +82,9 @@ modes:
       medium: handover      # no mid-call rewrite; pass the caller to a person
 
   chat:
-    budget_ms: 1500
+    # The former 1500 ms budget predated any judge. The 3583 ms measurement
+    # proved it would time out every turn and fail closed; 5000 ms leaves room.
+    budget_ms: 5000
     max_tier: 1             # tier-1 judges permitted
     on_timeout: high        # fail closed
     on_error: high

@@ -43,7 +43,12 @@ from guardrails.guards.base import GuardContext
 from guardrails.guards.pii import redact
 from guardrails.locale import get_rules
 from guardrails.pipeline import GuardrailPipeline
-from guardrails.provider.base import Completion, CompletionResult, Turn
+from guardrails.provider.base import (
+    Completion,
+    CompletionResult,
+    StructuredCompletion,
+    Turn,
+)
 from guardrails.retrieval.bm25 import Retriever
 from guardrails.retrieval.chunks import Chunk, Scored
 from guardrails.types import (
@@ -295,6 +300,7 @@ class Chatbot:
         completion: Completion,
         profile: ResolvedProfile,
         *,
+        judge: StructuredCompletion | None = None,
         guards_enabled: bool = True,
         pipeline: GuardrailPipeline | None = None,
         trace_id: str | None = None,
@@ -310,11 +316,16 @@ class Chatbot:
         would be quietly better than the unguarded assistant it is meant to
         represent.
 
+        ``judge`` is the tier-1 structured client. It is optional because voice
+        caps the cascade at tier 0 and because tests need to exercise the
+        missing-client error path. When omitted, a completion object that also
+        implements ``StructuredCompletion`` is reused; production passes a
+        separate instance configured with ``profile.models.judge``.
+
         ``pipeline`` is injectable for the same reason ``retriever`` and
         ``completion`` are: a test needs to exercise an action at a stage whose
-        registered guards cannot currently produce it (there is no INPUT-stage
-        guard yet, and no OUTPUT guard that routes to ``BLOCK``). The default
-        is the real registry, so production wiring passes nothing.
+        registered guards cannot currently produce it. The default is the real
+        registry, so production wiring passes nothing.
 
         ``trace_id`` identifies the *conversation*, not the turn: the pipeline
         stitches stages together by ``(trace_id, turn_index)``, so every stage
@@ -324,6 +335,11 @@ class Chatbot:
         """
         self._retriever = retriever
         self._completion = completion
+        self._judge = (
+            judge
+            if judge is not None
+            else completion if isinstance(completion, StructuredCompletion) else None
+        )
         self._profile = profile
         self._guards_enabled = guards_enabled
         self._pipeline = pipeline if pipeline is not None else GuardrailPipeline()
@@ -486,6 +502,7 @@ class Chatbot:
             reply=reply,
             retrieved=retrieved,
             history=history,
+            judge=self._judge,
         )
         return await self._pipeline.run(
             ctx, stage, trace_id=self._trace_id, turn_index=turn_index
@@ -885,6 +902,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         kb.for_locale(profile.locale),
         AnthropicCompletion(model=profile.models.chat),
         profile,
+        judge=AnthropicCompletion(model=profile.models.judge),
         guards_enabled=not args.no_guards,
         # One conversation, one trace id; the pipeline pairs it with the turn
         # index to stitch a turn's three stages back together.

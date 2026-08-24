@@ -13,6 +13,7 @@ from guardrails.guards.grounding import GroundingGuard
 from guardrails.guards.injection import InjectionGuard
 from guardrails.guards.persona import PersonaGuard
 from guardrails.guards.pii import PiiGuard
+from guardrails.guards.tone import ToneGuard
 
 __all__ = [
     "Guard",
@@ -22,6 +23,7 @@ __all__ = [
     "InjectionGuard",
     "PersonaGuard",
     "PiiGuard",
+    "ToneGuard",
     "build_verdict",
     "default_guards",
     "effective_severity",
@@ -35,6 +37,7 @@ _REGISTRY: dict[str, Guard] = {
     InjectionGuard.name: InjectionGuard(),
     DocumentGuard.name: DocumentGuard(),
     PiiGuard.name: PiiGuard(),
+    ToneGuard.name: ToneGuard(),
 }
 
 

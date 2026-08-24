@@ -34,3 +34,30 @@ async def test_returns_text_and_token_counts(provider):
     assert result.output_tokens > 0
     assert result.latency_ms > 0
     assert isinstance(result.stop_reason, str) and result.stop_reason
+
+
+async def test_forced_tool_choice_returns_structured_tone_keys():
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        pytest.skip("ANTHROPIC_API_KEY is not set")
+    provider = AnthropicCompletion(model="claude-sonnet-5")
+    schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "formal": {"type": "boolean"},
+            "reason": {"type": "string", "maxLength": 96},
+        },
+        "required": ["formal", "reason"],
+    }
+    result = await provider.complete_structured(
+        system="Judge whether the reply is formal. Keep the reason under 12 words.",
+        messages=(Turn("user", "Gern helfe ich Ihnen bei Ihrer Anfrage."),),
+        max_tokens=100,
+        tool_name="record_tone_probe",
+        input_schema=schema,
+    )
+
+    assert set(result.input) == {"formal", "reason"}
+    assert isinstance(result.input["formal"], bool)
+    assert isinstance(result.input["reason"], str) and result.input["reason"].strip()
+    assert result.latency_ms > 0

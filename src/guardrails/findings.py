@@ -34,8 +34,12 @@ TONE: Final = "tone"
 """Tier-1 judge finding: formality, empathy or concision outside the spec."""
 
 PERSONA_FINDINGS: Final = frozenset(
-    {ADDRESS_FORM, EMOJI, FORBIDDEN_PHRASE, SENTENCE_TOO_LONG, TTS_UNSAFE, TONE}
+    {ADDRESS_FORM, EMOJI, FORBIDDEN_PHRASE, SENTENCE_TOO_LONG, TTS_UNSAFE}
 )
+TONE_FINDINGS: Final = frozenset({TONE})
+"""Kept separate because ``ToneGuard`` owns this finding. Allowing it under
+``persona.severity_overrides`` would accept a setting that ``PersonaGuard``
+can never emit and therefore silently ignore the operator's policy."""
 
 # --- grounding / policy facts ----------------------------------------------
 
@@ -106,5 +110,5 @@ PII_FINDINGS: Final = frozenset(
 )
 
 ALL_FINDINGS: Final = (
-    PERSONA_FINDINGS | GROUNDING_FINDINGS | INJECTION_FINDINGS | PII_FINDINGS
+    PERSONA_FINDINGS | TONE_FINDINGS | GROUNDING_FINDINGS | INJECTION_FINDINGS | PII_FINDINGS
 )

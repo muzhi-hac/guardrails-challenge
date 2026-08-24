@@ -86,7 +86,6 @@ class PersonaGuard:
         findings.FORBIDDEN_PHRASE: Severity.MEDIUM,
         findings.SENTENCE_TOO_LONG: Severity.LOW,
         findings.TTS_UNSAFE: Severity.MEDIUM,
-        findings.TONE: Severity.LOW,
     }
 
     async def check(self, ctx: GuardContext) -> Verdict:

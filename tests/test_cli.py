@@ -22,7 +22,7 @@ import pytest
 import guardrails.provider.anthropic_client as anthropic_client_module
 import utils as utils_module
 from chatbot import main
-from guardrails.provider.base import CompletionResult, Turn
+from guardrails.provider.base import CompletionResult, StructuredCompletionResult, Turn
 from guardrails.types import Action, Mode, Severity
 from utils import TraceWriter, load_profile
 
@@ -31,9 +31,8 @@ PROFILES = Path(__file__).resolve().parents[1] / "profiles"
 
 class _StubCompletion:
     """A drop-in ``Completion`` that records every call and never touches
-    the network. One instance is created per ``main()`` call (``main``
-    constructs exactly one ``AnthropicCompletion``, reused for every REPL
-    turn), so ``instances[-1]`` after a call is the one that served it."""
+    the network. ``main`` creates separate chat and judge instances so their
+    configured model choices stay independent."""
 
     instances: list["_StubCompletion"] = []
 
@@ -53,6 +52,25 @@ class _StubCompletion:
             stop_reason="end_turn",
         )
 
+    async def complete_structured(
+        self, *, system, messages, max_tokens, tool_name, input_schema
+    ) -> StructuredCompletionResult:
+        dimensions = input_schema["properties"]["assessments"]["items"]["properties"]["dimension"]["enum"]
+        return StructuredCompletionResult(
+            input={
+                "assessments": [
+                    {"dimension": dimension, "passed": True, "reason": "Matches the brand tone."}
+                    for dimension in dimensions
+                ],
+                "confidence": 1.0,
+            },
+            model=self.model,
+            input_tokens=1,
+            output_tokens=1,
+            latency_ms=1.0,
+            stop_reason="tool_use",
+        )
+
 
 @pytest.fixture(autouse=True)
 def _no_network_and_no_repo_writes(monkeypatch, tmp_path):
@@ -70,7 +88,10 @@ def _no_network_and_no_repo_writes(monkeypatch, tmp_path):
 
 def _last_stub() -> _StubCompletion:
     assert _StubCompletion.instances, "AnthropicCompletion was never constructed"
-    return _StubCompletion.instances[-1]
+    for stub in reversed(_StubCompletion.instances):
+        if stub.model == "claude-opus-5":
+            return stub
+    raise AssertionError("chat completion stub was never constructed")
 
 
 def _read_trace_records(tmp_path: Path) -> list[dict]:
