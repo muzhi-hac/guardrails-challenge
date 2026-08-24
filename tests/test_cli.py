@@ -23,7 +23,8 @@ import guardrails.provider.anthropic_client as anthropic_client_module
 import utils as utils_module
 from chatbot import main
 from guardrails.provider.base import CompletionResult, Turn
-from utils import TraceWriter
+from guardrails.types import Action, Mode, Severity
+from utils import TraceWriter, load_profile
 
 PROFILES = Path(__file__).resolve().parents[1] / "profiles"
 
@@ -108,7 +109,19 @@ def test_trace_record_carries_stop_reason(tmp_path):
 
 def test_repl_accumulates_history_across_turns(tmp_path, monkeypatch):
     """Guards Finding 1: the REPL must not pass an empty history on every
-    turn -- the second call should see the first exchange."""
+    turn -- the second call should see the first exchange.
+
+    Run with ``--no-guards``, and that is not a way of dodging the guard
+    layer: the stub answers "Antwort 1" / "Antwort 2", whose bare digit is an
+    ungrounded number, so with guards on this turn legitimately routes to
+    rewrite and the assistant text the REPL threads back is the repair /
+    fallback rather than the stub's own string. That is correct behaviour, and
+    it is asserted directly in
+    ``test_repl_threads_the_guarded_reply_into_history`` below. What *this*
+    test isolates is the REPL loop's own plumbing -- that history is
+    accumulated at all -- so it holds the guard layer still. Every assertion
+    below is unchanged.
+    """
     answers = iter(["Erste Frage", "Zweite Frage"])
 
     def fake_input(prompt: str = "") -> str:
@@ -119,7 +132,7 @@ def test_repl_accumulates_history_across_turns(tmp_path, monkeypatch):
 
     monkeypatch.setattr("builtins.input", fake_input)
 
-    rc = main(["--profile", "telco_de"])
+    rc = main(["--profile", "telco_de", "--no-guards"])
     assert rc == 0
 
     stub = _last_stub()
@@ -166,3 +179,131 @@ def test_mode_accepts_documented_values(tmp_path):
 def test_mode_rejects_undocumented_values(tmp_path):
     with pytest.raises(SystemExit):
         main(["--profile", "telco_de", "--mode", "sms", "--question", "Hallo"])
+
+
+# --------------------------------------------------------------------------
+# The guard layer, from the CLI
+# --------------------------------------------------------------------------
+#
+# The stub answers "Antwort 1", whose bare digit is an ungrounded number
+# (MEDIUM under telco_de -> rewrite). The repair answers "Antwort 2", which is
+# ungrounded for exactly the same reason, so the guarded one-shot path here
+# reliably exercises the full sequence: three stages, one repair call, a
+# re-verification that fails, and the fallback. That is convenient rather than
+# contrived -- a stub that always answers with a digit is precisely the kind of
+# thing the grounding guard exists to catch.
+
+IBAN = "DE89 3704 0044 0532 0130 00"
+
+
+def test_no_guards_flag_runs_the_turn_without_the_pipeline(tmp_path):
+    rc = main(["--profile", "telco_de", "--no-guards", "--question", "Was kostet Tarif M?"])
+    assert rc == 0
+
+    record = _read_trace_records(tmp_path)[0]
+    assert record["guards_enabled"] is False
+    assert record["guards_ran"] is False
+    assert record["stages"] == []
+    assert record["action"] == "continue"
+    assert len(_last_stub().calls) == 1
+
+
+def test_the_same_question_is_guarded_without_the_flag(tmp_path):
+    """The before/after pair, at the CLI level: same profile, same question,
+    same stub -- and with the guard layer on, the ungrounded reply does not
+    reach the customer."""
+    rc = main(["--profile", "telco_de", "--question", "Was kostet Tarif M?"])
+    assert rc == 0
+
+    record = _read_trace_records(tmp_path)[0]
+    assert record["guards_enabled"] is True
+    assert record["guards_ran"] is True
+    assert record["action"] == "safe_fallback"
+    assert record["rewrite"] == {"attempted": True, "succeeded": False}
+
+
+def test_trace_record_summarises_every_stage_that_ran(tmp_path):
+    main(["--profile", "telco_de", "--question", "Was kostet Tarif M?"])
+    record = _read_trace_records(tmp_path)[0]
+
+    stages = record["stages"]
+    assert [stage["stage"] for stage in stages] == ["input", "retrieval", "output", "output"]
+    for stage in stages:
+        assert stage["action"] in {a.value for a in Action}
+        assert isinstance(stage["findings"], list)
+
+    kinds = {finding["kind"] for finding in stages[2]["findings"]}
+    severities = {finding["severity"] for finding in stages[2]["findings"]}
+    assert "ungrounded_number" in kinds
+    assert severities <= {s.name.lower() for s in Severity}
+
+
+def test_trace_record_carries_no_reply_text(tmp_path):
+    """A trace is archived and read by operators; the reply is the one thing a
+    guard finding says should not be handed on verbatim."""
+    main(["--profile", "telco_de", "--question", "Was kostet Tarif M?"])
+    raw = json.dumps(_read_trace_records(tmp_path)[0], ensure_ascii=False)
+    assert "Antwort" not in raw
+
+
+def test_trace_record_writes_the_redacted_question(tmp_path):
+    main(["--profile", "telco_de", "--question", f"Meine IBAN {IBAN} stimmt nicht."])
+    record = _read_trace_records(tmp_path)[0]
+
+    assert IBAN not in json.dumps(record, ensure_ascii=False)
+    assert "[IBAN]" in record["query"]
+    assert record["redacted"] == ["iban"]
+
+
+def test_no_guards_leaves_the_question_unredacted(tmp_path):
+    """The honest baseline: without the guard layer the customer's IBAN goes
+    to the provider and into the log in the clear. This test exists so that
+    the 'after' half above is measured against what actually happens without
+    it, not against a half-disabled version of it."""
+    main(["--profile", "telco_de", "--no-guards", "--question", f"Meine IBAN {IBAN} stimmt nicht."])
+    record = _read_trace_records(tmp_path)[0]
+
+    assert IBAN in record["query"]
+    assert record["redacted"] == []
+    _, messages = _last_stub().calls[0]
+    assert IBAN in messages[-1].content
+
+
+def test_trace_record_counts_the_repair_call_in_the_token_totals(tmp_path):
+    """A repaired turn made two model calls and was billed for both. Reporting
+    only the first would make the repair path look free in exactly the
+    aggregate someone would use to decide whether it is affordable."""
+    main(["--profile", "telco_de", "--question", "Was kostet Tarif M?"])
+    record = _read_trace_records(tmp_path)[0]
+
+    assert len(_last_stub().calls) == 2
+    assert record["input_tokens"] == 2
+    assert record["output_tokens"] == 2
+
+
+def test_repl_threads_the_guarded_reply_into_history(tmp_path, monkeypatch):
+    """The counterpart to ``test_repl_accumulates_history_across_turns``: with
+    guards on, what gets threaded into the next turn's history is the reply the
+    customer actually received -- the fallback -- not the draft the guard
+    rejected. Threading the rejected draft would quietly reintroduce it as
+    context the model treats as its own prior answer.
+    """
+    answers = iter(["Erste Frage", "Zweite Frage"])
+
+    def fake_input(prompt: str = "") -> str:
+        try:
+            return next(answers)
+        except StopIteration:
+            raise EOFError from None
+
+    monkeypatch.setattr("builtins.input", fake_input)
+
+    profile = load_profile(PROFILES / "telco_de.yaml").resolve(Mode.CHAT)
+    assert main(["--profile", "telco_de"]) == 0
+
+    stub = _last_stub()
+    # Two turns, each a generation plus one repair.
+    assert len(stub.calls) == 4
+    _, second_turn_messages = stub.calls[2]
+    assert second_turn_messages[0] == Turn("user", "Erste Frage")
+    assert second_turn_messages[1] == Turn("assistant", profile.fallback_message)
