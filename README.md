@@ -1,60 +1,75 @@
 # Guardrails Challenge
 
-> **Status: chatbot with measured retrieval, no guard pipeline wired in yet.**
-> The knowledge base, a German-aware BM25 retriever, a multi-turn chatbot, a
-> real Anthropic-backed completion layer, a run-scoped JSONL trace writer, and
-> a CLI entry point all exist and are covered by the test suite. Retrieval
-> recall is measured, not assumed — see
-> [DESIGN.md §5](DESIGN.md#5-how-we-know-it-works) for the numbers and
-> [§6](DESIGN.md#6-known-limitations) for the known limitations. What is **not**
-> here yet: the four guards themselves and the orchestrator that would route
-> their verdicts to an action. `python -m chatbot` talks straight to the model
-> over the retrieved context with no guard in the loop.
+A guardrail layer for a multilingual, multi-turn telecom customer-service
+assistant. The CLI runs the full `INPUT → RETRIEVAL → OUTPUT` pipeline, executes
+its action, and writes a compact JSONL trace for each turn.
 
-A guardrails system for a multi-turn customer-service assistant in the telecom
-domain, covering four failure modes:
+## What is implemented
 
-1. **Persona / brand-voice drift** — the assistant stops sounding like the brand
-   (formality slips, TTS-unsafe output).
-2. **Ungrounded policy and pricing claims** — invented tariffs, dates, or
-   entitlements not supported by the retrieved knowledge base.
-3. **Prompt injection and jailbreaks** — both from user input and from retrieved
-   documents treated as untrusted data.
-4. **PII exposure** — inbound redaction before logging, outbound leak prevention.
+| Guard | Stage | Tier | Detects |
+|---|---|---:|---|
+| `injection` | INPUT | 0 | Instruction override, role reassignment, encoded payloads and cross-turn assembly |
+| `document` | RETRIEVAL | 0 | Indirect instructions embedded in retrieved documents |
+| `persona` | OUTPUT | 0 | Address form, emoji, forbidden phrases, sentence length and TTS hazards |
+| `grounding` | OUTPUT | 0 | Unsupported numbers, prices, dates, durations and commitments |
+| `pii` | OUTPUT | 0 | Personal data in the reply that did not originate in the customer turn |
+| `tone` | OUTPUT | 1 | Residual brand-tone dimensions via forced tool choice |
+
+Profiles select locale, persona, routing, failure policy, model identifiers,
+latency budget and tier cap. Voice is limited to deterministic tier 0; chat can
+run the measured tier-1 judge.
 
 ## Setup
 
 ```bash
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+python3 -m venv .venv
+./.venv/bin/pip install -r requirements.txt
 ```
 
-`ANTHROPIC_API_KEY` is required to run the chatbot; there is no recorded-response
-fallback. The test suite does not need it — the live-API tests skip without it.
+The default test suite is entirely local. Live tests and the CLI read
+`ANTHROPIC_API_KEY` and optional `ANTHROPIC_BASE_URL` from the environment. No
+recorded-response or offline provider is included.
+
+```bash
+PYTHONPATH=src:tests ./.venv/bin/python -m pytest -q
+```
 
 ## Usage
 
 ```bash
-export ANTHROPIC_API_KEY=...          # required
-export ANTHROPIC_BASE_URL=...         # optional, for a third-party relay endpoint
-PYTHONPATH=src ./.venv/bin/python -m chatbot --profile telco_de --question "Was kostet Tarif M?"
+export ANTHROPIC_API_KEY=...          # required for live calls
+export ANTHROPIC_BASE_URL=...         # optional relay
+
+PYTHONPATH=src ./.venv/bin/python -m chatbot \
+  --profile telco_de \
+  --question "Was kostet Tarif M?"
 ```
 
-Omit `--question` to enter a REPL. Each run leaves one trace at
-`runs/<run_id>.jsonl`.
+Omit `--question` for the REPL. Use `--profile telco_en` for the English
+channel or `--mode voice` for the tier-0 voice policy. `--no-guards` runs the
+same retrieval and generation path without guard execution, for direct
+before/after evidence. Each CLI run writes `runs/<run_id>.jsonl`.
 
-The guard layer is not wired into this entry point yet — see
-[DESIGN.md §7, Roadmap](DESIGN.md#7-roadmap).
+## Evidence and design
+
+- [DESIGN.md](DESIGN.md) explains architecture, trade-offs and measured limits.
+- [tests/test_results.md](tests/test_results.md) records test distribution,
+  scenario results, recall and latency.
+- [docs/evaluation.md](docs/evaluation.md) answers the reflection questions.
+- [examples/example_runs.md](examples/example_runs.md) contains real live
+  transcripts, including three with/without-guards pairs.
 
 ## Repository layout
 
 | Path | Contents |
 |---|---|
-| `DESIGN.md` | Design thinking, architecture, trade-offs |
-| `src/guardrails/` | Guardrail implementations |
-| `src/chatbot.py` | Chatbot loop the guardrails wrap |
-| `src/utils.py` | Shared helpers |
-| `kb/` | German and English knowledge-base corpus |
-| `profiles/` | Client profiles (`telco_de`, `telco_en`, `gesundheit_de`) |
-| `tests/` | Test scenarios and results |
-| `examples/example_runs.md` | Real transcripts from the CLI against the live model, including runs that expose current limits |
+| `src/chatbot.py` | Turn orchestration, action execution, CLI and trace summaries |
+| `src/guardrails/guards/` | Six registered guards and their shared interface |
+| `src/guardrails/provider/` | Plain-text and forced-tool completion protocols plus the live provider |
+| `src/guardrails/retrieval/` | Chunking, document loading, BM25 and locale-partitioned knowledge base |
+| `src/guardrails/locale/` | German and English tokenisation, grammar and entity rules |
+| `profiles/` | Telecom and health-insurance client profiles |
+| `kb/` | German and English knowledge-base documents |
+| `tests/` | Unit, scenario, recall, live and recorded-result documentation |
+| `examples/` | Live transcripts and before/after evidence |
+| `docs/` | Evaluation and reflection |

@@ -6,8 +6,8 @@ judges require a tool call whose parsed input is their result. Keeping that
 concern in :class:`StructuredCompletion` also prevents an empty text result
 from silently discarding a ``tool_use`` block.
 
-``CompletionResult`` already carries token counts; the USD conversion is left
-for M7. That way adding the price table later doesn't require changing this
+``CompletionResult`` already carries token counts; USD conversion is left to a
+future dated price table. Adding that table later does not require changing this
 signature, and ``Verdict.cost_usd``, which has existed since M1, gets a real
 source to draw from once it lands.
 
@@ -24,7 +24,7 @@ endpoint, other channels, or future behaviour:
   and no verifiable constraining effect was observed with valid values either.
   This project therefore does not rely on that field to enforce judge effort.
 - The json-schema output format did not, within the tested scope, force a
-  schema-conforming result — it returned plain text instead. M7 therefore
+  schema-conforming result — it returned plain text instead. The judge therefore
   uses forced tool choice, verified on the same day within the same scope.
 - A request carrying ``max_tokens=32`` returned roughly 700 characters of
   text with ``stop_reason`` of ``"end_turn"`` — meaning this relay endpoint

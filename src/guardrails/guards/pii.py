@@ -350,10 +350,9 @@ def redact(text: str, entities: Sequence[str], rules: LocaleRules) -> tuple[str,
     A module-level function rather than guard behaviour: a guard's contract
     is to report findings, never to act, and rewriting text is an action —
     see the module docstring's "Redaction is a function, not a guard"
-    section. **Nothing calls this yet.** It exists so the chatbot wiring
-    task can redact the user's own turn before it reaches a log line or a
-    provider request, per ``PiiGuardConfig.redact_inbound``; that call site
-    does not exist in this codebase yet.
+    section. ``Chatbot`` calls it on the current user message and on user turns
+    retained in history before either text reaches a provider request or trace,
+    as directed by ``PiiGuardConfig.redact_inbound``.
 
     ``rules`` is accepted but not used by any pattern below — every entity
     here is a region-specific format (IBAN, phone, postcode), not a language

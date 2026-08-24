@@ -1,7 +1,7 @@
 """Shared helpers: configuration loading and writing traces to disk.
 
 The cost-to-USD conversion does not live here — it needs a price table, and
-that belongs to M7. Here token counts are only written to disk as-is.
+that belongs with a dated price table. Here token counts are written as-is.
 """
 
 from __future__ import annotations

@@ -89,13 +89,15 @@ def _bot(profile_name: str, locale: Locale) -> Chatbot:
     profile = load_profile(PROFILES / f"{profile_name}.yaml").resolve(Mode.CHAT)
     kb = KnowledgeBase.load(KB_ROOT)
     completion = AnthropicCompletion(model=profile.models.chat)
-    return Chatbot(kb.for_locale(locale), completion, profile)
+    judge = AnthropicCompletion(model=profile.models.judge)
+    return Chatbot(kb.for_locale(locale), completion, profile, judge=judge)
 
 
 def _bot_with_retriever(profile_name: str, retriever: _StubRetriever) -> Chatbot:
     profile = load_profile(PROFILES / f"{profile_name}.yaml").resolve(Mode.CHAT)
     completion = AnthropicCompletion(model=profile.models.chat)
-    return Chatbot(retriever, completion, profile)
+    judge = AnthropicCompletion(model=profile.models.judge)
+    return Chatbot(retriever, completion, profile, judge=judge)
 
 
 @pytest.fixture(autouse=True)

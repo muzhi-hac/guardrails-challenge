@@ -1,16 +1,15 @@
 # Example Runs
 
-Six real transcripts, produced by running the CLI
+The first six sections are real transcripts produced while building the CLI:
 
 ```bash
 PYTHONPATH=src ./.venv/bin/python -m chatbot --profile <profile> --question "<question>"
 ```
 
-against the live model. Retrieved chunk ids, BM25 scores, token counts, latency
-and `stop_reason` below are copied from that output, not illustrative. No guard
-layer is wired into this entry point yet (see [DESIGN.md](../DESIGN.md)); every
-reply below is the model's raw output over the retrieved context, shaped only
-by the system prompt.
+They predate enforcement and are retained as the raw baseline. Retrieved chunk
+ids, BM25 scores, token counts, latency and `stop_reason` in those sections are
+copied from live output, not illustrative. Section 7 adds current live pairs
+from the now-wired guard layer without replacing those historical observations.
 
 Three of these six runs are included specifically because they show the system
 falling short, not succeeding: a retrieval miss, an unfiltered off-topic
@@ -135,9 +134,9 @@ date, because the one input it would need — this customer's provisioning
 date — is not in the retrieved context. It asks for a customer number instead
 of guessing. Worth being precise about what this demonstrates: this is the
 system prompt asking for grounded behaviour and the model complying, **not** a
-guard enforcing it. The grounding guard that would verify a reply's claims
-against retrieved context mechanically, rather than relying on the model to
-volunteer this restraint, is the next module (DESIGN.md §6, finding 2).
+guard enforcing it. At the time of this transcript, the grounding guard had
+not yet shipped. The current pipeline now performs that mechanical comparison;
+the raw run remains evidence of what the model did without enforcement.
 
 ---
 
@@ -324,15 +323,15 @@ untrusted content and report it rather than act on it.
    downstream that treats "retrieval returned chunks" as "retrieval returned
    relevant chunks" will be wrong on exactly this kind of input.
 
-3. **Grounded, non-inventive behaviour here comes from the prompt, not from a
-   guard.** Run 3's refusal to invent a provisioning date, and run 2's
+3. **Grounded, non-inventive behaviour in these six historical runs came from
+   the prompt, not from a guard.** Run 3's refusal to invent a provisioning date, and run 2's
    separation of statutory rule from company policy, are both the model
    following instructions well — not a mechanical check verifying the reply
    against retrieved context after the fact. Nothing currently stops a
    differently-phrased question, or a different day's model sampling, from
    producing an ungrounded claim that looks exactly as fluent as these
-   correct ones. That verification is the grounding guard's job, and it is
-   not built yet (DESIGN.md §6).
+   correct ones. The current grounding guard now performs that verification;
+   these baseline transcripts intentionally preserve the earlier state.
 
 ---
 

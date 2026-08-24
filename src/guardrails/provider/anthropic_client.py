@@ -22,14 +22,14 @@ account routing, this module's calling convention, and the model identifier
 in effect at that time; they do not represent the official endpoint, other
 channels, or future behaviour (the same observations are also recorded in
 the module docstring of ``guardrails.provider.base``, because they are a
-premise of the M7 judge design):
+premise of the tier-1 judge design):
 
 - A request carrying an invalid effort value received no parameter error,
   and no verifiable constraining effect was observed with valid values
   either. This project therefore does not rely on that field to enforce
   judge effort.
 - The json-schema output format did not, within the tested scope, force a
-  schema-conforming result — it returned plain text instead. The later judge
+  schema-conforming result — it returned plain text instead. The tone judge
   module therefore switches to forced tool choice — verified as working on
   the same day, within the same scope.
 - A request carrying ``max_tokens=32`` returned roughly 700 characters of
