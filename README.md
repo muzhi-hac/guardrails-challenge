@@ -1,5 +1,7 @@
 # Guardrails Challenge
 
+[![tests](https://github.com/muzhi-hac/guardrails-challenge/actions/workflows/tests.yml/badge.svg)](https://github.com/muzhi-hac/guardrails-challenge/actions/workflows/tests.yml)
+
 A guardrail layer for a multilingual, multi-turn telecom customer-service
 assistant. The CLI runs the full `INPUT → RETRIEVAL → OUTPUT` pipeline, executes
 its action, and writes a compact JSONL trace for each turn.
@@ -49,9 +51,18 @@ python3 -m venv .venv
 ./.venv/bin/pip install -r requirements.txt
 ```
 
-The default test suite is entirely local. Live tests and the CLI read
+The default test suite is entirely local and needs no credentials; CI runs it
+on Python 3.12, 3.13 and 3.14 with no API key set. Live tests and the CLI read
 `ANTHROPIC_API_KEY` and optional `ANTHROPIC_BASE_URL` from the environment. No
 recorded-response or offline provider is included.
+
+```bash
+cp .env.example .env      # then fill in the key
+set -a; source .env; set +a
+```
+
+Nothing auto-loads `.env`; the provider reads the process environment, and
+`.env` is gitignored.
 
 ```bash
 PYTHONPATH=src:tests ./.venv/bin/python -m pytest -q
@@ -96,3 +107,5 @@ before/after evidence. Each CLI run writes `runs/<run_id>.jsonl`.
 | `tests/` | Unit, scenario, recall, live and recorded-result documentation |
 | `examples/` | Live transcripts and before/after evidence |
 | `docs/` | Evaluation and reflection |
+| `.github/workflows/` | CI: the local suite on three Python versions |
+| `.env.example` | Credential template; `.env` itself is never committed |

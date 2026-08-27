@@ -1,0 +1,35 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  pytest:
+    name: pytest (python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # No ANTHROPIC_API_KEY is provided, deliberately. The default suite is
+      # entirely local; the live-marked tests skip themselves when the key is
+      # absent, so CI never spends money and never depends on a provider being
+      # reachable. Run them locally with `pytest -m live` when a key is set.
+      - name: Run tests
+        run: pytest -q
