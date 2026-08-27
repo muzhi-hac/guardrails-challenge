@@ -89,6 +89,42 @@ closed grammatical and lexical sets used by `PersonaGuard`.
 
 ## 3. Architecture
 
+One turn runs three guard stages around one generation call. The two
+pre-generation stages are gates rather than reports: if either returns anything
+but `continue`, the turn ends without the completion provider ever being
+touched.
+
+```mermaid
+flowchart TD
+    U["Customer turn"] --> RED["Inbound PII redaction<br/>the guards see the original words,<br/>the model and the trace see the redacted form"]
+    RED --> I["INPUT stage · tier 0<br/>injection"]
+    I -->|continue| S["BM25 retrieval<br/>top-k chunks, locale-partitioned"]
+    I -->|"any other action"| ACT
+    S --> D["RETRIEVAL stage · tier 0<br/>document"]
+    D -->|continue| G["Generation<br/>a fresh per-turn nonce fences<br/>the untrusted document region"]
+    D -->|"any other action"| ACT
+    G --> O["OUTPUT stage<br/>persona · grounding · pii — tier 0<br/>tone — tier 1"]
+    O -->|continue| SEND["The draft reaches the customer"]
+    O -->|rewrite| REP["Repair the flagged spans<br/>one attempt only"]
+    O -->|"handover · safe_fallback · block"| ACT["Operator-authored profile text.<br/>Deliberately not re-run through the guards:<br/>it is the answer the client wrote<br/>for exactly this situation"]
+    REP --> RC["OUTPUT re-check"]
+    RC -->|continue| SEND
+    RC -->|"rewrite again"| ACT
+    RC -->|"handover · block"| ACT
+```
+
+Two edges in that diagram are decisions rather than plumbing. A `rewrite`
+routed by a **pre-generation** stage is coerced *upward* to `safe_fallback`:
+there is no reply to repair yet, and treating an action we cannot perform as
+`continue` would let a finding the client considered serious enough to require
+repair pass through unrepaired, silently, at the stage where stopping is
+cheapest. A **second** `rewrite` after a failed repair is refused rather than
+retried — a repair that did not satisfy the constraint is evidence, not an
+invitation. Both coercions are written into the turn's `reason`, so a trace
+never shows an action the routing table did not produce without naming what
+changed it (`_coerce_pre_generation` and `_after_repair` in `src/chatbot.py`).
+
+
 ### 3.1 Verdicts, not booleans
 
 A guard does not return a boolean and it does not return a decision. It returns
@@ -96,6 +132,24 @@ a `Verdict`: an outcome, a severity, and the `Evidence` — the finding kind and
 the character span in the original text — that justifies it. The orchestrator
 aggregates the verdicts of one stage and maps the aggregate onto exactly one
 `Action` using the client profile's routing table.
+
+```mermaid
+flowchart LR
+    subgraph detection["Detection — a guard holds no policy"]
+        direction TB
+        C["guard.check"] --> V["Verdict<br/>outcome: pass or fail<br/>severity<br/>evidence: finding kind + character span"]
+    end
+    subgraph orchestrator["Orchestration — one shared deadline per stage"]
+        direction TB
+        V --> ST["Guard never answered?<br/>outcome: error · timeout · skipped,<br/>severity stamped from the profile —<br/>this is where fail-open and fail-closed live"]
+        ST --> AG["aggregate_severity = max over every verdict,<br/>non-conclusive ones included"]
+    end
+    subgraph profile["Policy — the profile performs no detection"]
+        direction TB
+        AG --> RT["routing table<br/>none · low · medium · high · critical"]
+    end
+    RT --> A["exactly one Action for the turn<br/>continue · rewrite · handover · safe_fallback · block"]
+```
 
 **This was originally the other way round, and getting it wrong first is what
 makes the argument concrete.** In the first design each guard returned

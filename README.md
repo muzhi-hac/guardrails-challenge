@@ -4,6 +4,29 @@ A guardrail layer for a multilingual, multi-turn telecom customer-service
 assistant. The CLI runs the full `INPUT → RETRIEVAL → OUTPUT` pipeline, executes
 its action, and writes a compact JSONL trace for each turn.
 
+## How a turn flows
+
+```mermaid
+flowchart TD
+    U["Customer turn"] --> I["INPUT stage<br/>injection · tier 0"]
+    I -->|continue| S["BM25 retrieval, top-k chunks"]
+    S --> D["RETRIEVAL stage<br/>document · tier 0"]
+    D -->|continue| G["Generation"]
+    G --> O["OUTPUT stage<br/>persona · grounding · pii · tier 0<br/>tone · tier 1"]
+    O -->|continue| SEND["Reply reaches the customer"]
+    O -->|rewrite| REP["Repair the flagged spans,<br/>then re-check"]
+    REP --> SEND
+    I -->|"stopped"| ACT["Operator-authored text<br/>handover · safe_fallback · block"]
+    D -->|"stopped"| ACT
+    O -->|"stopped"| ACT
+    REP -->|"repair failed"| ACT
+```
+
+A stage that does not return `continue` ends the turn there. INPUT and
+RETRIEVAL run **before** the model is called, so a stopped turn costs no
+generation. [DESIGN.md](DESIGN.md#3-architecture) has the full diagram and the
+verdict-to-action split.
+
 ## What is implemented
 
 | Guard | Stage | Tier | Detects |
